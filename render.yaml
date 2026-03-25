@@ -5,5 +5,3 @@ services:
     envVars:
       - key: MISTRAL_API_KEY
         sync: false # User must set this in Render UI
-    restartPolicy:
-      always: true
