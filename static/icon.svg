@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+    <rect width="512" height="512" fill="#030712" rx="100"/>
+    <path d="M166.4 341.3c55.9-33.5 135.2-33.5 191.1 0l50.3 30.1c32.8 19.8 74.9 11.1 96.9-21.5A114.3 114.3 0 0 0 426.7 262c0-64.6-52.7-117.3-117.3-117.3H192c-68.5 0-124.6 56.6-124.6 126.1 0 26.7 9.2 52.3 24.3 73l13.2-24.3z" fill="url(#grad)" opacity="0.8"/>
+    <defs>
+        <linearGradient id="grad" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stop-color="#8b5cf6" />
+            <stop offset="100%" stop-color="#3b82f6" />
+        </linearGradient>
+    </defs>
+    <!-- Simple Ghost Icon inside -->
+    <path d="M256 128c-44.2 0-80 35.8-80 80v140l25-15 25 15 30-15 30 15 25-15 25 15V208c0-44.2-35.8-80-80-80z" fill="#f9fafb" opacity="0.9"/>
+    <circle cx="230" cy="200" r="10" fill="#030712"/>
+    <circle cx="282" cy="200" r="10" fill="#030712"/>
+</svg>

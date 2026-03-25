@@ -1,0 +1,10 @@
+.env
+__pycache__/
+*.py[cod]
+*$py.class
+.vscode/
+.idea/
+*.pdf
+tmp/
+node_modules/
+.DS_Store
