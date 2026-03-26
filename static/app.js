@@ -17,7 +17,10 @@ const DOM = {
     progressSubtitle: document.getElementById('progressSubtitle'),
     errorToast: document.getElementById('errorToast'),
     errorMessage: document.getElementById('errorMessage'),
-    reportTimestamp: document.getElementById('reportTimestamp')
+    reportTimestamp: document.getElementById('reportTimestamp'),
+    roadmapSection: document.getElementById('roadmapSection'),
+    backFromRoadmap: document.getElementById('backFromRoadmap'),
+    openChangelog: document.getElementById('openChangelog')
 };
 
 let sessionId = null;
@@ -38,6 +41,14 @@ const UIState = {
         DOM.errorMessage.textContent = msg;
         DOM.errorToast.classList.remove('hidden');
         setTimeout(() => DOM.errorToast.classList.add('hidden'), 5000);
+    },
+    showSection(sectionId) {
+        [DOM.heroSection, DOM.resultsSection, DOM.roadmapSection].forEach(s => {
+            if (s) s.classList.add('hidden');
+        });
+        const target = document.getElementById(sectionId);
+        if (target) target.classList.remove('hidden');
+        window.scrollTo(0, 0);
     }
 };
 
@@ -317,18 +328,19 @@ DOM.endSessionBtn.addEventListener('click', async () => {
     }
 });
 
-// Changelog Modal Logic
-const changelogModal = document.getElementById('changelogModal');
-const openChangelog = document.getElementById('openChangelog');
-const closeChangelog = document.getElementById('closeChangelog');
-
-if (openChangelog) {
-    openChangelog.addEventListener('click', () => {
-        changelogModal.classList.remove('hidden');
+// Roadmap Navigation Logic
+if (DOM.openChangelog) {
+    DOM.openChangelog.addEventListener('click', () => {
+        UIState.showSection('roadmapSection');
     });
 }
-if (closeChangelog) {
-    closeChangelog.addEventListener('click', () => {
-        changelogModal.classList.add('hidden');
+
+if (DOM.backFromRoadmap) {
+    DOM.backFromRoadmap.addEventListener('click', () => {
+        if (!DOM.resultsSection.classList.contains('hidden')) {
+            UIState.showSection('resultsSection');
+        } else {
+            UIState.showSection('heroSection');
+        }
     });
 }

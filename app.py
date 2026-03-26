@@ -253,18 +253,23 @@ async def analyze_health_insurance(request: AnalyzeRequest):
         JSON Structure:
         {{
             "health": {{
-                "abnormal_parameters": ["param1", "param2"],
-                "domain_scores": {{ "cardio": 70, "liver": 40 }},
-                "detected_patterns": ["pattern1"],
-                "risk_projection": {{ "short": "", "medium": "", "long": "" }},
-                "overall_risk": "moderate"
+                "abnormal_parameters": ["string: parameter name only"],
+                "domain_scores": {{ "cardio": 0-100, "liver": 0-100, "respiratory": 0-100, "metabolic": 0-100 }},
+                "detected_patterns": ["string: identified trend"],
+                "risk_projection": {{ "short": "string", "medium": "string", "long": "string" }},
+                "overall_risk": "low|moderate|high"
             }},
             "insurance": {{
-                "matched_policy_items": [],
-                "coverage_details": {{ "covered": [], "conditional": [], "excluded": [] }},
-                "waiting_periods": []
+                "matched_policy_items": ["string: benefit name"],
+                "coverage_details": {{ "covered": ["string"], "conditional": ["string"], "excluded": ["string"] }},
+                "waiting_periods": ["string: period description"]
             }}
         }}
+        STRICT RULES: 
+        1. NO conversational text. 
+        2. NO markdown formatting outside the JSON block.
+        3. All numeric scores must be INTEGERS.
+        4. Do NOT hallucinate data not present in texts.
         """
         extract_res = client.chat.complete(
             model="mistral-large-latest",
@@ -300,15 +305,37 @@ async def analyze_health_insurance(request: AnalyzeRequest):
         Be specific about WHY (e.g. waiting periods, exclusions).
         STRICT SCHEME ENFORCEMENT:
         Every field below MUST be a STRING. Do NOT return sub-objects or arrays where a string is expected.
+        STRICT SCHEME ENFORCEMENT:
+        Every field below MUST be exactly as specified. 
+        Strings must be meaningful explanations, not just "N/A" unless truly missing.
         REQUIRED OUTPUT JSON FORMAT:
         {{
-            "summary": "Full text string only",
-            "abnormal_explanations": [{{ "parameter": "name", "explanation": "text string" }}],
-            "pattern_explanation": ["string1", "string2"],
-            "risk_outlook": {{ "short_term": "string", "medium_term": "string", "long_term": "string", "short_term_multiplier": "string", "medium_term_multiplier": "string", "long_term_multiplier": "string" }},
-            "recommendations": ["string1", "string2"],
-            "insurance": {{ "covered": ["string"], "conditional": ["string"], "not_covered": ["string"], "future_cost_awareness": "string", "potential_out_of_pocket_increase": "string" }},
-            "future_coverage_mapping": [{{ "pattern": "string", "future_condition": "string", "coverage_status": "string", "coverage_gap_risk": "string", "severity_trend": "string" }}],
+            "summary": "1-2 paragraph executive summary",
+            "abnormal_explanations": [{{ "parameter": "name", "explanation": "clear medical explanation" }}],
+            "pattern_explanation": ["explanation of trend 1", "explanation of trend 2"],
+            "risk_outlook": {{ 
+                "short_term": "Optimistic|Stable|Concerning", 
+                "medium_term": "Optimistic|Stable|Concerning", 
+                "long_term": "Optimistic|Stable|Concerning", 
+                "short_term_multiplier": "+0% to +100%", 
+                "medium_term_multiplier": "+0% to +100%", 
+                "long_term_multiplier": "+0% to +100%" 
+            }},
+            "recommendations": ["Actionable step 1", "Actionable step 2"],
+            "insurance": {{ 
+                "covered": ["Policy Item A", "Policy Item B"], 
+                "conditional": ["Condition X", "Condition Y"], 
+                "not_covered": ["Exclusion Z"], 
+                "future_cost_awareness": "Detailed impact on future premiums/costs", 
+                "potential_out_of_pocket_increase": "Percentage string" 
+            }},
+            "future_coverage_mapping": [{{ 
+                "pattern": "Health Trend", 
+                "future_condition": "Likely Diagnosis", 
+                "coverage_status": "Covered|Excluded|Partial", 
+                "coverage_gap_risk": "High|Medium|Low", 
+                "severity_trend": "Increasing|Stable|Decreasing" 
+            }}],
             "disclaimer": "Safety statement"
         }}
         """
