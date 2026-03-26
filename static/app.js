@@ -284,3 +284,19 @@ DOM.endSessionBtn.addEventListener('click', async () => {
         location.reload();
     }
 });
+
+// Changelog Modal Logic
+const changelogModal = document.getElementById('changelogModal');
+const openChangelog = document.getElementById('openChangelog');
+const closeChangelog = document.getElementById('closeChangelog');
+
+if (openChangelog) {
+    openChangelog.addEventListener('click', () => {
+        changelogModal.classList.remove('hidden');
+    });
+}
+if (closeChangelog) {
+    closeChangelog.addEventListener('click', () => {
+        changelogModal.classList.add('hidden');
+    });
+}

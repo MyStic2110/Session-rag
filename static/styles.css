@@ -614,6 +614,49 @@ body {
 .s-text { font-size: 0.95rem; line-height: 1.5; color: var(--text-secondary); }
 .s-text strong { color: var(--text-primary); }
 
+/* Changelog */
+.changelog-btn {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.4rem 0.8rem;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid var(--card-border);
+    border-radius: 0.5rem;
+    color: var(--text-secondary);
+    font-size: 0.75rem;
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
+
+.changelog-btn:hover { background: rgba(59, 130, 246, 0.1); color: var(--primary-light); }
+
+.changelog-card { max-width: 500px; width: 90%; max-height: 80vh; padding: 0 !important; overflow: hidden; background: rgba(10, 15, 28, 0.95) !important; }
+
+.c-header { display: flex; justify-content: space-between; align-items: center; padding: 1.5rem 2rem; border-bottom: 1px solid var(--card-border); }
+.c-header h2 { font-size: 1.2rem; }
+.close-btn { background: none; border: none; font-size: 1.8rem; color: var(--text-secondary); cursor: pointer; }
+
+.c-body { padding: 2rem; max-height: calc(80vh - 70px); overflow-y: auto; }
+
+.timeline { position: relative; padding-left: 2.5rem; }
+.t-line { position: absolute; left: 0.5rem; top: 0; bottom: 0; width: 2px; background: var(--card-border); }
+
+.t-item { position: relative; margin-bottom: 2.5rem; }
+.t-marker { position: absolute; left: -2.35rem; top: 0.4rem; width: 12px; height: 12px; border-radius: 50%; background: var(--primary); border: 3px solid #030712; z-index: 2; }
+
+.t-date { font-size: 0.7rem; color: var(--primary-light); font-weight: 700; margin-bottom: 0.5rem; letter-spacing: 1px; }
+.t-content h3 { font-size: 1rem; margin-bottom: 0.5rem; color: var(--text-primary); }
+.t-content p { font-size: 0.85rem; color: var(--text-secondary); line-height: 1.5; }
+
+.t-tags { display: flex; gap: 0.5rem; margin-top: 0.8rem; }
+.tag { font-size: 0.65rem; padding: 0.2rem 0.6rem; border-radius: 2rem; background: rgba(255,255,255,0.05); color: var(--text-secondary); }
+.tag.core { color: #f59e0b; background: rgba(245, 158, 11, 0.1); }
+.tag.security { color: #10b981; background: rgba(16, 185, 129, 0.1); }
+.tag.rag { color: #6366f1; background: rgba(99, 102, 241, 0.1); }
+.tag.design { color: #ec4899; background: rgba(236, 72, 153, 0.1); }
+.tag.launch { color: #3b82f6; background: rgba(59, 130, 246, 0.1); }
+
 @media (max-width: 900px) {
     .navbar { padding: 1rem 1.5rem; }
     .nav-status { display: none; }

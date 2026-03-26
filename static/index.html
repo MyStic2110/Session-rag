@@ -32,7 +32,13 @@
     <main class="container">
         <!-- Hero Section -->
         <section id="heroSection" class="hero">
-            <div class="badge-tag">End-to-End Privacy Guaranteed</div>
+            <div class="hero-actions">
+                <div class="badge-tag">End-to-End Privacy Guaranteed</div>
+                <button id="openChangelog" class="changelog-btn">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+                    Project Timeline
+                </button>
+            </div>
             <h1>GhostPolicy: <span class="gradient-text">Zero-Persistence</span> Intelligence</h1>
             <p class="hero-desc">The only RAG platform that maps your health to insurance policies with <strong>zero storage</strong>. All uploads are processed in volatile memory and destroyed the moment you leave.</p>
             
@@ -117,6 +123,69 @@
         <div class="toast-content">
             <svg class="error-icon" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
             <span id="errorMessage">An unexpected error occurred</span>
+        </div>
+    </div>
+
+    <!-- Changelog Modal -->
+    <div id="changelogModal" class="overlay hidden">
+        <div class="glass-card overlay-card changelog-card">
+            <div class="c-header">
+                <h2>Project Roadmap</h2>
+                <button id="closeChangelog" class="close-btn">&times;</button>
+            </div>
+            <div class="c-body">
+                <div class="timeline">
+                    <div class="t-line"></div>
+                    <div class="t-item">
+                        <div class="t-marker"></div>
+                        <div class="t-date">DAY 1</div>
+                        <div class="t-content">
+                            <h3>Project Genesis</h3>
+                            <p>Initialized zero-persistence architecture. FastAPI backend & Mistral OCR layer.</p>
+                            <div class="t-tags">
+                                <span class="tag core">Core</span>
+                                <span class="tag security">Privacy</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="t-item">
+                        <div class="t-marker"></div>
+                        <div class="t-date">DAY 2</div>
+                        <div class="t-content">
+                            <h3>Intelligence Engine</h3>
+                            <p>Implemented Dual-Layer RAG. Health report parameter extraction from PDFs.</p>
+                            <div class="t-tags">
+                                <span class="tag rag">RAG</span>
+                                <span class="tag health">Analysis</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="t-item">
+                        <div class="t-marker"></div>
+                        <div class="t-date">DAY 3</div>
+                        <div class="t-content">
+                            <h3>UI/UX 2.0 Upgrade</h3>
+                            <p>Glassmorphism design. Vision 2027 Tabular Roadmap. Production progress indicators.</p>
+                            <div class="t-tags">
+                                <span class="tag design">Design</span>
+                                <span class="tag usp">USP</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="t-item">
+                        <div class="t-marker"></div>
+                        <div class="t-date">DAY 4</div>
+                        <div class="t-content">
+                            <h3>Cloud Deployment</h3>
+                            <p>Dockerization. GitHub Sync. Hugging Face Space & Persistent DNS launch.</p>
+                            <div class="t-tags">
+                                <span class="tag launch">Deploy</span>
+                                <span class="tag devops">Cloud</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
         </div>
     </div>
 
