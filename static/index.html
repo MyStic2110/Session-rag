@@ -189,6 +189,33 @@
         </div>
     </div>
 
+    <!-- Queue Overlay -->
+    <div id="queueOverlay" class="overlay hidden">
+        <div class="glass-card overlay-card queue-card animate-slide-up">
+            <div class="queue-icon-container">
+                <svg class="queue-icon" xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 6.1H3"/><path d="M21 12.1H3"/><path d="M15 18.1H3"/></svg>
+            </div>
+            <h3>System at Capacity</h3>
+            <p class="queue-main-msg">This platform runs with limited capacity. Each user gets 15 minutes of interactive time.</p>
+            
+            <div class="queue-stats">
+                <div class="q-stat">
+                    <span class="q-label">Position in Queue</span>
+                    <span id="queuePosition" class="q-value">-- / --</span>
+                </div>
+                <div class="q-stat">
+                    <span class="q-label">Estimated Wait</span>
+                    <span id="queueWait" class="q-value">~-- minutes</span>
+                </div>
+            </div>
+
+            <div class="queue-footer">
+                <p>Please keep this tab open — the platform will start automatically when it's your turn.</p>
+                <div class="pulse-loader"></div>
+            </div>
+        </div>
+    </div>
+
     <script src="app.js"></script>
     <script>
         if ('serviceWorker' in navigator) {

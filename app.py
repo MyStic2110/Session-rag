@@ -17,8 +17,15 @@ from mistralai.client import Mistral
 
 load_dotenv(override=True)
 
-SESSION_TIMEOUT_MINUTES = 30
+SESSION_TIMEOUT_MINUTES = 15
 CLEANUP_INTERVAL_SECONDS = 300
+MAX_ACTIVE_ANALYSES = 5
+
+# In-memory store refined for Health + Policy
+SESSION_STORE: Dict[str, Any] = {}
+WAITING_QUEUE: List[str] = []
+ACTIVE_ANALYSES_COUNT = 0
+QUEUE_LOCK = asyncio.Lock()
 
 app = FastAPI(title="GhostPolicy - Health & Insurance Intelligence")
 
@@ -29,9 +36,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-# In-memory store refined for Health + Policy
-SESSION_STORE: Dict[str, Any] = {}
 
 def get_mistral_client() -> Mistral:
     key = os.environ.get("MISTRAL_API_KEY")
@@ -189,18 +193,52 @@ async def upload_document(
             
     return {"status": "success", "type": doc_type}
 
+@app.get("/queue/status/{session_id}")
+async def get_queue_status(session_id: str):
+    async with QUEUE_LOCK:
+        if session_id in WAITING_QUEUE:
+            pos = WAITING_QUEUE.index(session_id) + 1
+            return {
+                "status": "waiting",
+                "position": pos,
+                "total": len(WAITING_QUEUE),
+                "wait_estimate": pos * 2 # 2 mins per person
+            }
+        return {"status": "ready"}
+
 @app.post("/analyze")
 async def analyze_health_insurance(request: AnalyzeRequest):
-    print(f"[*] ANALYSIS START: Session {request.session_id[:8]}")
-    session = get_session(request.session_id)
-    client = get_mistral_client()
+    global ACTIVE_ANALYSES_COUNT
+    session_id = request.session_id
+    print(f"[*] ANALYSIS REQUEST: Session {session_id[:8]}")
     
-    if not session["health_text"] or not session["policy_text"]:
-        print("[!] ERROR: Missing document data for analysis.")
-        raise HTTPException(status_code=400, detail="Both Health Report and Insurance Policy must be uploaded first.")
+    session = get_session(session_id)
+    
+    async with QUEUE_LOCK:
+        if ACTIVE_ANALYSES_COUNT >= MAX_ACTIVE_ANALYSES:
+            if session_id not in WAITING_QUEUE:
+                WAITING_QUEUE.append(session_id)
+            pos = WAITING_QUEUE.index(session_id) + 1
+            return {
+                "status": "queued", 
+                "position": pos, 
+                "total": len(WAITING_QUEUE),
+                "wait_estimate": pos * 2
+            }
         
+        # If was in queue, remove it
+        if session_id in WAITING_QUEUE:
+            WAITING_QUEUE.remove(session_id)
+        
+        ACTIVE_ANALYSES_COUNT += 1
+
+    if not session["health_text"] or not session["policy_text"]:
+        async with QUEUE_LOCK:
+            ACTIVE_ANALYSES_COUNT -= 1
+        raise HTTPException(status_code=400, detail="Both Health Report and Insurance Policy must be uploaded first.")
+
     try:
-        # LAYER 2: Deterministic Extraction
+        client = get_mistral_client()
         print("[*] LAYER 2: Extracting deterministic health/policy facts...")
         extraction_prompt = f"""
         Extract deterministic data from the following health and insurance texts.
@@ -223,111 +261,76 @@ async def analyze_health_insurance(request: AnalyzeRequest):
             }},
             "insurance": {{
                 "matched_policy_items": [],
-                "coverage_details": {{
-                    "covered": [],
-                    "conditional": [],
-                    "excluded": []
-                }},
+                "coverage_details": {{ "covered": [], "conditional": [], "excluded": [] }},
                 "waiting_periods": []
             }}
         }}
         """
-        
         extract_res = client.chat.complete(
             model="mistral-large-latest",
             messages=[{"role": "user", "content": extraction_prompt}],
             response_format={"type": "json_object"}
         )
-        
         deterministic_data = json.loads(extract_res.choices[0].message.content)
-        print(f"[OK] LAYER 2 SUCCESS: {len(deterministic_data.get('health', {}).get('abnormal_parameters', []))} abnormalities found.")
-        
-        # LAYER 3: Explanation
+
         print("[*] LAYER 3: Generating final explanation and mapping...")
         system_prompt = """
         You are a health and insurance explanation assistant.
         You DO NOT perform any medical analysis, scoring, inference, or insurance eligibility decisions.
         All health analysis and insurance interpretations are provided to you as deterministic data.
-        
         Your role is to:
         1. Explain the health data in simple terms
         2. Explain how health status relates to policy coverage
         3. Clearly present coverage strictly based on provided policy mapping
-        
         STRICT RULES:
         - DO NOT calculate or override data.
         - DO NOT diagnose or predict specific diseases.
         - DO NOT give financial or medical advice.
         - Use CLEAR, CALM, and SUPPORTIVE tone.
         - Output STRICT JSON format as specified.
-        
         SAFETY STATEMENT (MANDATORY):
         "This is not a medical diagnosis or insurance advice. Please consult a qualified healthcare professional and your insurance provider for detailed guidance."
         """
-        
         final_prompt = f"""
-        INPUT DATA:
-        {json.dumps(deterministic_data)}
-        
-        TASK:
-        Generate the explanation following the 7 sections. 
-        
+        INPUT DATA: {json.dumps(deterministic_data)}
+        TASK: Generate the explanation following the 7 sections. 
         Section: "Future Coverage Mapping"
         For each map, use an "Intelligent Re-analysis" tone.
         Explain the mapping as: "Your insurance will cover this if you are within the policy period, otherwise you will pay from your pocket."
         Be specific about WHY (e.g. waiting periods, exclusions).
-        
         STRICT SCHEME ENFORCEMENT:
         Every field below MUST be a STRING. Do NOT return sub-objects or arrays where a string is expected.
-        
         REQUIRED OUTPUT JSON FORMAT:
         {{
             "summary": "Full text string only",
             "abnormal_explanations": [{{ "parameter": "name", "explanation": "text string" }}],
             "pattern_explanation": ["string1", "string2"],
-            "risk_outlook": {{ 
-                "short_term": "string", "short_term_multiplier": "string (+XX%)",
-                "medium_term": "string", "medium_term_multiplier": "string (+XX%)",
-                "long_term": "string", "long_term_multiplier": "string (+XX%)"
-            }},
+            "risk_outlook": {{ "short_term": "string", "medium_term": "string", "long_term": "string", "short_term_multiplier": "string", "medium_term_multiplier": "string", "long_term_multiplier": "string" }},
             "recommendations": ["string1", "string2"],
-            "insurance": {{
-                "covered": ["string"],
-                "conditional": ["string"],
-                "not_covered": ["string"],
-                "future_cost_awareness": "Full text string only",
-                "potential_out_of_pocket_increase": "string (XX%)"
-            }},
-            "future_coverage_mapping": [
-                {{ 
-                    "pattern": "Technical pattern", 
-                    "future_condition": "Future risk", 
-                    "coverage_status": "EXPLANATION: 'Covered if within policy period vs Out-of-pocket' logic",
-                    "coverage_gap_risk": "string (XX%)",
-                    "severity_trend": "string (+XX%)"
-                }}
-            ],
+            "insurance": {{ "covered": ["string"], "conditional": ["string"], "not_covered": ["string"], "future_cost_awareness": "string", "potential_out_of_pocket_increase": "string" }},
+            "future_coverage_mapping": [{{ "pattern": "string", "future_condition": "string", "coverage_status": "string", "coverage_gap_risk": "string", "severity_trend": "string" }}],
             "disclaimer": "Safety statement"
         }}
         """
-        
         final_res = client.chat.complete(
             model="mistral-large-latest",
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": final_prompt}
-            ],
+            messages=[{"role": "system", "content": system_prompt}, {"role": "user", "content": final_prompt}],
             response_format={"type": "json_object"}
         )
-        
         analysis_data = json.loads(final_res.choices[0].message.content)
+        analysis_data["status"] = "success"
         print("[OK] ANALYSIS COMPLETE: Intelligent Mapping finished.")
         return analysis_data
         
+    except HTTPException:
+        raise
     except Exception as e:
         print(f"[!] ANALYSIS ERROR: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        async with QUEUE_LOCK:
+            ACTIVE_ANALYSES_COUNT -= 1
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8000))
-    uvicorn.run("main:app", host="0.0.0.0", port=port, reload=True)
+    uvicorn.run("app:app", host="0.0.0.0", port=port, reload=True)

@@ -111,38 +111,70 @@ DOM.analyzeBtn.addEventListener('click', async () => {
     try {
         UIState.setLoading("Document Secure Upload", "Encrypting and transmitting medical records...");
         
-        // Parallel Upload for efficiency
         await Promise.all([
             upload(healthFile, 'health'),
             upload(policyFile, 'policy')
         ]);
         
-        UIState.setLoading("OCR & Fact Extraction", "Mistral AI is reading laboratory values and policy clauses...");
+        triggerAnalysis();
         
-        const analyzeRes = await fetch('/analyze', {
+    } catch (e) {
+        UIState.hideLoading();
+        showError(e.message);
+    }
+});
+
+async function pollQueueStatus() {
+    try {
+        const response = await fetch(`/queue/status/${sessionId}`);
+        const data = await response.json();
+        
+        if (data.status === 'waiting') {
+            document.getElementById('queuePosition').innerText = `${data.position} / ${data.total}`;
+            document.getElementById('queueWait').innerText = `~${data.wait_estimate} minutes`;
+            setTimeout(pollQueueStatus, 5000);
+        } else {
+            document.getElementById('queueOverlay').classList.add('hidden');
+            triggerAnalysis(); 
+        }
+    } catch (e) {
+        setTimeout(pollQueueStatus, 5000);
+    }
+}
+
+async function triggerAnalysis() {
+    UIState.setLoading("Analyzing Medical Data", "Mistral IQ is mapping your condition to policy terms...");
+    
+    try {
+        const response = await fetch('/analyze', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ session_id: sessionId })
         });
         
-        if (!analyzeRes.ok) {
-            const err = await analyzeRes.json();
-            throw new Error(err.detail || "Intelligent Analysis Failed");
-        }
+        const data = await response.json();
         
-        UIState.setLoading("Rendering Intelligence", "Assembling your personalized coverage roadmap...");
-        const result = await analyzeRes.json();
-        
-        setTimeout(() => {
-            renderResults(result);
+        if (data.status === 'queued') {
             UIState.hideLoading();
-        }, 800);
-        
-    } catch (e) {
+            document.getElementById('queueOverlay').classList.remove('hidden');
+            document.getElementById('queuePosition').innerText = `${data.position} / ${data.total}`;
+            document.getElementById('queueWait').innerText = `~${data.wait_estimate} minutes`;
+            pollQueueStatus();
+            return;
+        }
+
+        if (data.status === 'success') {
+            renderResults(data);
+            UIState.hideLoading();
+            document.getElementById('resultsSection').scrollIntoView({ behavior: 'smooth' });
+        } else {
+            throw new Error(data.detail || "Analysis failed");
+        }
+    } catch (error) {
         UIState.hideLoading();
-        UIState.showError(e.message);
+        showError(error.message);
     }
-});
+}
 
 async function upload(file, type) {
     const fd = new FormData();
