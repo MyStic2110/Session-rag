@@ -428,5 +428,7 @@ async def analyze_coverage_stream(payload: AnalyzePayload):
     return StreamingResponse(event_generator(), media_type="text/event-stream")
 
 if __name__ == "__main__":
+    # Standard Railway environment uses PORT variable
     port = int(os.environ.get("PORT", 8001))
-    uvicorn.run("llm_app:app", host="0.0.0.0", port=port, reload=True)
+    print(f"[*] Starting LLM service on port {port}...")
+    uvicorn.run("llm_app:app", host="0.0.0.0", port=port, reload=False)

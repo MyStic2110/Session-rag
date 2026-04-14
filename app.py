@@ -27,6 +27,9 @@ WAITING_QUEUE: List[str] = []
 ACTIVE_ANALYSES_COUNT = 0
 QUEUE_LOCK = asyncio.Lock()
 
+# Service Discovery Configuration
+LLM_SERVICE_BASE_URL = os.environ.get("LLM_SERVICE_URL", "http://localhost:8001").rstrip("/")
+
 app = FastAPI(title="LumeHealth - Medical AI & Insurance Intelligence")
 
 app.add_middleware(
@@ -73,7 +76,7 @@ async def cleanup_sessions_job():
                     for f_id in session_data["mistral_file_ids"]:
                         try:
                             async with httpx.AsyncClient() as client:
-                                await client.delete(f"http://localhost:8001/file/{f_id}")
+                                await client.delete(f"{LLM_SERVICE_BASE_URL}/file/{f_id}")
                         except Exception:
                             pass
             except Exception:
@@ -112,7 +115,7 @@ async def end_session(request: SessionEndRequest):
             for f_id in session_data["mistral_file_ids"]:
                 try:
                     async with httpx.AsyncClient() as client:
-                        await client.delete(f"http://localhost:8001/file/{f_id}")
+                        await client.delete(f"{LLM_SERVICE_BASE_URL}/file/{f_id}")
                 except Exception:
                     pass
         except Exception:
@@ -149,7 +152,7 @@ async def upload_document(
         async with httpx.AsyncClient(timeout=120.0) as client:
             files = {'file': (file.filename, content_bytes, file.content_type)}
             data = {'doc_type': doc_type}
-            resp = await client.post("http://localhost:8001/ocr", data=data, files=files)
+            resp = await client.post(f"{LLM_SERVICE_BASE_URL}/ocr", data=data, files=files)
             if resp.status_code != 200:
                 raise Exception(resp.text)
             
@@ -222,7 +225,7 @@ async def analyze_health_insurance(request: AnalyzeRequest):
                 "health_text": session['health_text'],
                 "policy_text": session['policy_text']
             }
-            resp = await client.post("http://localhost:8001/analyze", json=payload)
+            resp = await client.post(f"{LLM_SERVICE_BASE_URL}/analyze", json=payload)
             if resp.status_code != 200:
                 raise Exception(resp.text)
             
@@ -280,7 +283,7 @@ async def analyze_health_insurance_stream(session_id: str):
                 "policy_text": session['policy_text']
             }
             async with httpx.AsyncClient(timeout=120.0) as client:
-                async with client.stream("POST", "http://localhost:8001/analyze/stream", json=payload) as response:
+                async with client.stream("POST", f"{LLM_SERVICE_BASE_URL}/analyze/stream", json=payload) as response:
                     async for chunk in response.aiter_text():
                         yield chunk
         except Exception as e:

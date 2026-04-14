@@ -12,5 +12,5 @@ COPY . .
 # Expose port
 EXPOSE 8080
 
-# Run the application
-CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8080"]
+# Explicitly do NOT set CMD here to allow Railway / Render / PaaS 
+# to inject their own start commands for different services.
