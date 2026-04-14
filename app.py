@@ -54,7 +54,7 @@ async def root():
 
 @app.on_event("startup")
 async def startup_event():
-    print("[INFO] GhostPolicy Backend Starting...")
+    print("[INFO] LumeHealth Backend Starting...")
     asyncio.create_task(cleanup_sessions_job())
 
 async def cleanup_sessions_job():

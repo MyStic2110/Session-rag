@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: ghostpolicy-rag
+    name: lumehealth-rag
     runtime: docker
     envVars:
       - key: MISTRAL_API_KEY

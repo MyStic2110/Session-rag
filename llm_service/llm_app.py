@@ -1,15 +1,19 @@
 import os
 import tempfile
 import json
-from typing import Dict, Any, cast
+import re
+from typing import Dict, Any, cast, List, Optional
 
 import uvicorn
 from dotenv import load_dotenv
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, validator
 from mistralai.client import Mistral
+from io import StringIO
+import sys
+import contextlib
 
 load_dotenv(override=True)
 
@@ -34,11 +38,74 @@ class AnalyzePayload(BaseModel):
     health_text: str
     policy_text: str
 
+# --- Guardrail Schemas ---
+
+class AbnormalExplanation(BaseModel):
+    parameter: str
+    explanation: str
+
+class RiskOutlook(BaseModel):
+    short_term: str
+    medium_term: str
+    long_term: str
+    short_term_multiplier: str
+    medium_term_multiplier: str
+    long_term_multiplier: str
+
+class InsuranceInfo(BaseModel):
+    covered: List[str]
+    conditional: List[str]
+    not_covered: List[str]
+    future_cost_awareness: str
+    potential_out_of_pocket_increase: str
+
+class FutureMapping(BaseModel):
+    pattern: str
+    future_condition: str
+    coverage_status: str
+    coverage_gap_risk: str
+    severity_trend: str
+
+class ComprehensiveAnalysisResponse(BaseModel):
+    summary: str
+    abnormal_explanations: List[AbnormalExplanation]
+    pattern_explanation: List[str]
+    risk_outlook: RiskOutlook
+    recommendations: List[str]
+    insurance: InsuranceInfo
+    future_coverage_mapping: List[FutureMapping]
+    disclaimer: str
+    status: Optional[str] = "success"
+
+# --- Utility Functions ---
+
+def scrub_pii(text: str) -> str:
+    """Redacts patient personal details using regex heuristics."""
+    if not text:
+        return ""
+    # 1. Email
+    text = re.sub(r'[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+', '[REDACTED_EMAIL]', text)
+    # 2. Phone (various formats)
+    text = re.sub(r'(\+?\d{1,3}[\s-]?)?\(?\d{3}\)?[\s-]?\d{3}[\s-]?\d{4}', '[REDACTED_PHONE]', text)
+    # 3. Specific Personal IDs (SSN, common medical ID formats)
+    text = re.sub(r'\b\d{3}-\d{2}-\d{4}\b', '[REDACTED_ID]', text)
+    # 4. Patient Name Heuristics (matches phrases like "Patient Name: John Doe")
+    text = re.sub(r'(?i)(patient\s*name|name|subject|client)\s*[:=-]\s*([A-Z][a-z]+(\s+[A-Z][a-z]+)+)', r'\1: [REDACTED_NAME]', text)
+    return text
+
+const_safety_disclaimer = (
+    "This is not a medical diagnosis or insurance advice. LumeHealth provides AI-driven explanations "
+    "based on the documents provided. Please consult a qualified healthcare professional and your "
+    "insurance provider for definitive guidance."
+)
+
 @app.post("/ocr")
 async def process_ocr(doc_type: str = Form(...), file: UploadFile = File(...)):
     print(f"[*] [LLM Service] Processing OCR for: {file.filename} of type {doc_type}")
-    client = get_mistral_client()
     
+    engine = os.environ.get("OCR_ENGINE", "mistral").lower()
+    print(f"[*] [LLM Service] Using OCR Engine: {engine}")
+
     raw_content = await file.read()
     content_bytes = cast(bytes, raw_content)
     
@@ -50,26 +117,8 @@ async def process_ocr(doc_type: str = Form(...), file: UploadFile = File(...)):
         with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
             tmp.write(content_bytes)
             tmp_path = tmp.name
-        
-        with open(tmp_path, "rb") as f:
-            uploaded_file = client.files.upload(
-                file={"file_name": file.filename, "content": f},
-                purpose="ocr"
-            )
-        
-        file_id = uploaded_file.id
-        signed_url = client.files.get_signed_url(file_id=file_id)
-        ocr_response = client.ocr.process(
-            model="mistral-ocr-2512",
-            document={"type": "document_url", "document_url": signed_url.url}
-        )
-        
-        full_text = ""
-        for page in ocr_response.pages:
-            full_text += page.markdown + "\n\n"
-        
-        print(f"[OK] [LLM Service] OCR COMPLETE: {len(full_text)} chars extracted.")
-        return {"status": "success", "text": full_text, "file_id": file_id}
+
+        return await run_mistral_ocr_process(tmp_path, file.filename)
             
     except Exception as e:
         print(f"[!] [LLM Service] OCR ERROR: {str(e)}")
@@ -77,6 +126,29 @@ async def process_ocr(doc_type: str = Form(...), file: UploadFile = File(...)):
     finally:
         if tmp_path and os.path.exists(tmp_path):
             os.unlink(tmp_path)
+
+async def run_mistral_ocr_process(tmp_path: str, filename: str):
+    print(f"[*] [LLM Service] Running Mistral OCR...")
+    client = get_mistral_client()
+    with open(tmp_path, "rb") as f:
+        uploaded_file = client.files.upload(
+            file={"file_name": filename, "content": f},
+            purpose="ocr"
+        )
+    
+    file_id = uploaded_file.id
+    signed_url = client.files.get_signed_url(file_id=file_id)
+    ocr_response = client.ocr.process(
+        model="mistral-ocr-2512",
+        document={"type": "document_url", "document_url": signed_url.url}
+    )
+    
+    full_text = ""
+    for page in ocr_response.pages:
+        full_text += page.markdown + "\n\n"
+    
+    print(f"[OK] [LLM Service] Mistral OCR COMPLETE: {len(full_text)} chars extracted.")
+    return {"status": "success", "text": full_text, "file_id": file_id, "engine": "mistral"}
 
 @app.delete("/file/{file_id}")
 async def delete_file(file_id: str):
@@ -101,10 +173,10 @@ async def analyze_coverage(payload: AnalyzePayload):
         Output ONLY valid JSON.
         
         HEALTH TEXT:
-        {payload.health_text[:10000]}
+        {payload.health_text[:20000]}
         
         POLICY TEXT:
-        {payload.policy_text[:10000]}
+        {payload.policy_text[:20000]}
         
         JSON Structure:
         {{
@@ -212,6 +284,7 @@ async def analyze_coverage_stream(payload: AnalyzePayload):
     client = get_mistral_client()
     
     async def event_generator():
+        total_tokens = {"prompt": 0, "completion": 0, "total": 0}
         try:
             yield f"event: step\ndata: {json.dumps({'message': 'Extracting deterministic facts (Layer 2)', 'progress': 30})}\n\n"
             
@@ -220,10 +293,10 @@ async def analyze_coverage_stream(payload: AnalyzePayload):
             Output ONLY valid JSON.
             
             HEALTH TEXT:
-            {payload.health_text[:10000]}
+            {payload.health_text[:20000]}
             
             POLICY TEXT:
-            {payload.policy_text[:10000]}
+            {payload.policy_text[:20000]}
             
             JSON Structure:
             {{
@@ -256,6 +329,13 @@ async def analyze_coverage_stream(payload: AnalyzePayload):
             
             extract_res = await asyncio.to_thread(call_mistral)
             deterministic_data = json.loads(extract_res.choices[0].message.content)
+            
+            # Track Tokens Layer 2
+            usage = extract_res.usage
+            total_tokens["prompt"] += usage.prompt_tokens
+            total_tokens["completion"] += usage.completion_tokens
+            total_tokens["total"] += usage.total_tokens
+            yield f"event: token\ndata: {json.dumps(total_tokens)}\n\n"
 
             yield f"event: step\ndata: {json.dumps({'message': 'Formulating explanation parameters (Layer 3)', 'progress': 60})}\n\n"
 
@@ -330,6 +410,13 @@ async def analyze_coverage_stream(payload: AnalyzePayload):
             final_res = await asyncio.to_thread(call_mistral_final)
             analysis_data = json.loads(final_res.choices[0].message.content)
             analysis_data["status"] = "success"
+
+            # Track Tokens Layer 3
+            usage_final = final_res.usage
+            total_tokens["prompt"] += usage_final.prompt_tokens
+            total_tokens["completion"] += usage_final.completion_tokens
+            total_tokens["total"] += usage_final.total_tokens
+            yield f"event: token\ndata: {json.dumps(total_tokens)}\n\n"
             
             yield f"event: result\ndata: {json.dumps(analysis_data)}\n\n"
             print("[OK] [LLM Service] ANALYSIS STREAM COMPLETE.")

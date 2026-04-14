@@ -18,9 +18,11 @@ const DOM = {
     errorToast: document.getElementById('errorToast'),
     errorMessage: document.getElementById('errorMessage'),
     reportTimestamp: document.getElementById('reportTimestamp'),
-    roadmapSection: document.getElementById('roadmapSection'),
-    backFromRoadmap: document.getElementById('backFromRoadmap'),
-    openChangelog: document.getElementById('openChangelog')
+    // Token Tracker
+    tokenTracker: document.getElementById('tokenTracker'),
+    promptTokens: document.getElementById('promptTokens'),
+    completionTokens: document.getElementById('completionTokens'),
+    totalTokens: document.getElementById('totalTokens'),
 };
 
 let sessionId = null;
@@ -43,7 +45,7 @@ const UIState = {
         setTimeout(() => DOM.errorToast.classList.add('hidden'), 5000);
     },
     showSection(sectionId) {
-        [DOM.heroSection, DOM.resultsSection, DOM.roadmapSection].forEach(s => {
+        [DOM.heroSection, DOM.resultsSection].forEach(s => {
             if (s) s.classList.add('hidden');
         });
         const target = document.getElementById(sectionId);
@@ -66,7 +68,7 @@ const UIState = {
 
 function setupDropZone(zone, input, labelEl, type) {
     if (!zone || !input) return;
-    
+
     ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(e => {
         zone.addEventListener(e, evt => {
             evt.preventDefault();
@@ -81,31 +83,33 @@ function setupDropZone(zone, input, labelEl, type) {
 
     zone.addEventListener('drop', e => {
         const files = e.dataTransfer.files;
-        if (files.length) handleFileSelect(files[0], labelEl, type);
+        if (files.length) handleFileSelect(files[0], labelEl, type, zone);
     });
 
     zone.addEventListener('click', () => input.click());
     input.addEventListener('change', e => {
-        if (e.target.files.length) handleFileSelect(e.target.files[0], labelEl, type);
+        if (e.target.files.length) handleFileSelect(e.target.files[0], labelEl, type, zone);
     });
 }
 
 setupDropZone(DOM.healthDropZone, DOM.healthInput, DOM.healthFileName, 'health');
 setupDropZone(DOM.policyDropZone, DOM.policyInput, DOM.policyFileName, 'policy');
 
-function handleFileSelect(file, labelEl, type) {
+function handleFileSelect(file, labelEl, type, zone) {
     if (file.type !== 'application/pdf') {
         UIState.showError('Invalid Format: Only medical/insurance PDFs are allowed.');
         return;
     }
-    
+
+    if (type === 'health') {
+        healthFile = file;
     } else {
         policyFile = file;
     }
 
     labelEl.textContent = file.name;
-    zone.classList.add('selected');
-    
+    if (zone) zone.classList.add('selected');
+
     if (healthFile && policyFile) {
         DOM.analyzeBtn.disabled = false;
         DOM.analyzeBtn.classList.remove('disabled');
@@ -131,38 +135,72 @@ DOM.analyzeBtn.addEventListener('click', async () => {
     }
 });
 
+// ── Token Tracker Helpers ──────────────────────────────────────────────────
+function animateTokenValue(el, value) {
+    if (!el) return;
+    el.textContent = value.toLocaleString();
+    el.classList.remove('pop-update');
+    // Force reflow to restart animation
+    void el.offsetWidth;
+    el.classList.add('pop-update');
+    el.addEventListener('animationend', () => el.classList.remove('pop-update'), { once: true });
+}
+
+function showTokenTracker() {
+    if (!DOM.tokenTracker) return;
+    DOM.tokenTracker.classList.remove('hidden');
+}
+
+function resetTokenTracker() {
+    if (!DOM.tokenTracker) return;
+    DOM.tokenTracker.classList.add('hidden');
+    if (DOM.promptTokens)     DOM.promptTokens.textContent     = '0';
+    if (DOM.completionTokens) DOM.completionTokens.textContent = '0';
+    if (DOM.totalTokens)      DOM.totalTokens.textContent      = '0';
+}
+// ──────────────────────────────────────────────────────────────────────────
+
 function triggerAnalysis() {
     UIState.setLoading("Establishing Connection", "Connecting to Mistral IQ Streaming Engine...");
-    
+    showTokenTracker();
+
     const es = new EventSource(`/analyze/stream/${sessionId}`);
-    
+
     es.addEventListener('queue', (e) => {
         const data = JSON.parse(e.data);
         UIState.hideLoading();
-        document.getElementById('queueOverlay').classList.remove('hidden');
-        document.getElementById('queuePosition').innerText = `${data.position} / ${data.total}`;
-        document.getElementById('queueWait').innerText = `~${data.wait_estimate} minutes`;
+        document.getElementById('queueOverlay')?.classList.remove('hidden');
+        document.getElementById('queuePosition') && (document.getElementById('queuePosition').innerText = `${data.position} / ${data.total}`);
+        document.getElementById('queueWait') && (document.getElementById('queueWait').innerText = `~${data.wait_estimate} minutes`);
     });
-    
+
     es.addEventListener('step', (e) => {
         const data = JSON.parse(e.data);
-        document.getElementById('queueOverlay').classList.add('hidden');
+        document.getElementById('queueOverlay')?.classList.add('hidden');
         UIState.hideLoading();
-        
+
         if (DOM.resultsSection.classList.contains('hidden')) {
             renderSkeletons(data.message);
         } else {
             const sm = document.getElementById('skeletonMessage');
-            if(sm) sm.innerText = data.message;
+            if (sm) sm.innerText = data.message;
         }
     });
-    
+
+    // ── Token event: update the floating tracker ──
+    es.addEventListener('token', (e) => {
+        const t = JSON.parse(e.data);
+        animateTokenValue(DOM.promptTokens,     t.prompt     ?? 0);
+        animateTokenValue(DOM.completionTokens, t.completion ?? 0);
+        animateTokenValue(DOM.totalTokens,      t.total      ?? 0);
+    });
+
     es.addEventListener('result', (e) => {
         const data = JSON.parse(e.data);
         es.close();
         renderResults(data);
     });
-    
+
     es.addEventListener('error', (e) => {
         es.close();
         UIState.hideLoading();
@@ -332,6 +370,7 @@ function renderResults(data) {
 DOM.endSessionBtn.addEventListener('click', async () => {
     if (!sessionId) return;
     if (confirm("Permanently destroy this analysis session?")) {
+        resetTokenTracker();
         await fetch('/session/end', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -341,19 +380,3 @@ DOM.endSessionBtn.addEventListener('click', async () => {
     }
 });
 
-// Roadmap Navigation Logic
-if (DOM.openChangelog) {
-    DOM.openChangelog.addEventListener('click', () => {
-        UIState.showSection('roadmapSection');
-    });
-}
-
-if (DOM.backFromRoadmap) {
-    DOM.backFromRoadmap.addEventListener('click', () => {
-        if (!DOM.resultsSection.classList.contains('hidden')) {
-            UIState.showSection('resultsSection');
-        } else {
-            UIState.showSection('heroSection');
-        }
-    });
-}

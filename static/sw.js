@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ghostpolicy-v3';
+const CACHE_NAME = 'lumehealth-v1';
 const ASSETS = [
     '/static/',
     '/static/index.html',
