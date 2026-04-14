@@ -28,7 +28,10 @@ ACTIVE_ANALYSES_COUNT = 0
 QUEUE_LOCK = asyncio.Lock()
 
 # Service Discovery Configuration
-LLM_SERVICE_BASE_URL = os.environ.get("LLM_SERVICE_URL", "http://localhost:8001").rstrip("/")
+_raw_url = os.environ.get("LLM_SERVICE_URL", "http://localhost:8001").rstrip("/")
+if _raw_url and not _raw_url.startswith(("http://", "https://")):
+    _raw_url = f"http://{_raw_url}"
+LLM_SERVICE_BASE_URL = _raw_url
 
 app = FastAPI(title="LumeHealth - Medical AI & Insurance Intelligence")
 
