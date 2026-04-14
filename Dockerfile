@@ -9,8 +9,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application code
 COPY . .
 
-# Expose port
+# Expose port (Railway standard is 8080 or based on $PORT)
 EXPOSE 8080
 
-# Explicitly do NOT set CMD here to allow Railway / Render / PaaS 
-# to inject their own start commands for different services.
+# Run the Main Application
+CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8080"]
