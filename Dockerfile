@@ -9,8 +9,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application code
 COPY . .
 
-# Expose port (Hugging Face uses 7860)
-EXPOSE 7860
+# Expose port
+EXPOSE 8080
 
-# Run with Gunicorn for production or Uvicorn directly
-CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "7860"]
+# Run the application
+CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8080"]
