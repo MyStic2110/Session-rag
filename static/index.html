@@ -3,8 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>GhostPolicy 2.0 | Zero-Persistence Health & Insurance RAG</title>
-    <meta name="description" content="Secure, session-based intelligence mapping health reports to insurance policy coverage with zero persistence.">
+    <title>LumeHealth | AI-Powered Health & Insurance Intelligence</title>
+    <meta name="description" content="Secure, session-based intelligence mapping health reports to insurance policy coverage with LumeHealth.">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@300;400;600;700;800&display=swap" rel="stylesheet">
@@ -15,73 +15,78 @@
 <body>
     <div class="mesh-bg"></div>
     
-    <nav class="navbar glass-card">
+    <nav class="navbar clean-card">
         <div class="logo">
             <svg class="logo-icon" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-            Ghost<span>Policy</span> 2.0
+            Lume<span>Health</span>
         </div>
-        <div class="nav-status">
+        <div class="nav-actions">
             <div class="privacy-badge">
                 <span class="pulse-dot"></span>
-                In-Memory Session Only
+                Secure Session
             </div>
-            <button id="endSessionBtn" class="btn secondary hidden">Destroy Session Memory</button>
+            <button id="advisorBtn" class="btn primary small">Talk to an Advisor</button>
+            <button id="endSessionBtn" class="btn secondary small hidden">End Session</button>
         </div>
     </nav>
 
     <main class="container">
         <!-- Hero Section -->
         <section id="heroSection" class="hero">
-            <div class="hero-actions">
-                <div class="badge-tag">End-to-End Privacy Guaranteed</div>
-                <button id="openChangelog" class="changelog-btn">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
-                    Project Timeline
-                </button>
-            </div>
-            <h1>GhostPolicy: <span class="gradient-text">Zero-Persistence</span> Intelligence</h1>
-            <p class="hero-desc">The only RAG platform that maps your health to insurance policies with <strong>zero storage</strong>. All uploads are processed in volatile memory and destroyed the moment you leave.</p>
-            
-            <div class="security-banner glass-card">
-                <div class="s-icon">🛡️</div>
-                <div class="s-text">
-                    <strong>Zero-Persistence Architecture:</strong> Your data is never saved to a database or disk. We use ephemeral RAG to ensure absolute medical privacy.
-                </div>
-            </div>
-            <p>Upload your <strong>Health Report</strong> and <strong>Insurance Policy</strong>. <br/>We'll map your health status to your coverage benefits instantly.</p>
-            
-            <div class="dual-upload-grid">
-                <!-- Health Upload -->
-                <div class="upload-container">
-                    <div class="upload-label">Health Report</div>
-                    <input type="file" id="healthInput" accept="application/pdf" class="hidden">
-                    <div class="upload-box glass-card small" id="healthDropZone">
-                        <div class="upload-ring mini">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+            <div class="hero-content">
+                <div class="badge-tag">End-to-End Medical Privacy</div>
+                <h1>Your health, <span class="gradient-text">clarified</span>. <br/>Your coverage, <span class="gradient-text">mapped</span>.</h1>
+                <p class="hero-desc">LumeHealth uses session-only intelligence to map your health reports to insurance policy coverage with absolute privacy.</p>
+                
+                <div class="upload-grid-container">
+                    <div class="dual-upload-grid">
+                        <!-- Health Upload -->
+                        <div class="upload-container">
+                            <input type="file" id="healthInput" accept="application/pdf" class="hidden">
+                            <div class="upload-box clean-card" id="healthDropZone">
+                                <div class="upload-icon">
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+                                </div>
+                                <div class="upload-text">
+                                    <span class="u-title">Health Report</span>
+                                    <p id="healthFileName">Drop PDF here</p>
+                                </div>
+                            </div>
                         </div>
-                        <p id="healthFileName">No file selected</p>
-                        <span class="browse-link">Browse Health PDF</span>
+
+                        <!-- Policy Upload -->
+                        <div class="upload-container">
+                            <input type="file" id="policyInput" accept="application/pdf" class="hidden">
+                            <div class="upload-box clean-card" id="policyDropZone">
+                                <div class="upload-icon">
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
+                                </div>
+                                <div class="upload-text">
+                                    <span class="u-title">Insurance Policy</span>
+                                    <p id="policyFileName">Drop PDF here</p>
+                                </div>
+                            </div>
+                        </div>
                     </div>
+
+                    <button id="analyzeBtn" class="btn primary glowing disabled" disabled>
+                        <span>Analyze Coverage Gap</span>
+                    </button>
+                    <div id="uploadStatus" class="status-message"></div>
                 </div>
 
-                <!-- Policy Upload -->
-                <div class="upload-container">
-                    <div class="upload-label">Insurance Policy</div>
-                    <input type="file" id="policyInput" accept="application/pdf" class="hidden">
-                    <div class="upload-box glass-card small" id="policyDropZone">
-                        <div class="upload-ring mini">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
-                        </div>
-                        <p id="policyFileName">No file selected</p>
-                        <span class="browse-link">Browse Policy PDF</span>
+                <!-- Trusted By Section -->
+                <div class="partners-section">
+                    <p class="partners-title">Supported by Leading Carriers</p>
+                    <div class="partners-grid">
+                        <div class="partner-logo">Allianz</div>
+                        <div class="partner-logo">AXA</div>
+                        <div class="partner-logo">Prudential</div>
+                        <div class="partner-logo">Cigna</div>
+                        <div class="partner-logo">Bupa</div>
                     </div>
                 </div>
             </div>
-            
-            <button id="analyzeBtn" class="btn primary glowing disabled" disabled>
-                <span>Run Intelligent Mapping</span>
-            </button>
-            <div id="uploadStatus" class="status-message"></div>
         </section>
 
         <!-- Analysis Results Section -->

@@ -99,16 +99,12 @@ function handleFileSelect(file, labelEl, type) {
         return;
     }
     
-    if (type === 'health') {
-        healthFile = file;
-        DOM.healthDropZone.style.borderColor = 'var(--success)';
     } else {
         policyFile = file;
-        DOM.policyDropZone.style.borderColor = 'var(--success)';
     }
 
     labelEl.textContent = file.name;
-    labelEl.classList.add('selected');
+    zone.classList.add('selected');
     
     if (healthFile && policyFile) {
         DOM.analyzeBtn.disabled = false;
@@ -131,60 +127,85 @@ DOM.analyzeBtn.addEventListener('click', async () => {
         
     } catch (e) {
         UIState.hideLoading();
-        showError(e.message);
+        UIState.showError(e.message);
     }
 });
 
-async function pollQueueStatus() {
-    try {
-        const response = await fetch(`/queue/status/${sessionId}`);
-        const data = await response.json();
+function triggerAnalysis() {
+    UIState.setLoading("Establishing Connection", "Connecting to Mistral IQ Streaming Engine...");
+    
+    const es = new EventSource(`/analyze/stream/${sessionId}`);
+    
+    es.addEventListener('queue', (e) => {
+        const data = JSON.parse(e.data);
+        UIState.hideLoading();
+        document.getElementById('queueOverlay').classList.remove('hidden');
+        document.getElementById('queuePosition').innerText = `${data.position} / ${data.total}`;
+        document.getElementById('queueWait').innerText = `~${data.wait_estimate} minutes`;
+    });
+    
+    es.addEventListener('step', (e) => {
+        const data = JSON.parse(e.data);
+        document.getElementById('queueOverlay').classList.add('hidden');
+        UIState.hideLoading();
         
-        if (data.status === 'waiting') {
-            document.getElementById('queuePosition').innerText = `${data.position} / ${data.total}`;
-            document.getElementById('queueWait').innerText = `~${data.wait_estimate} minutes`;
-            setTimeout(pollQueueStatus, 5000);
+        if (DOM.resultsSection.classList.contains('hidden')) {
+            renderSkeletons(data.message);
         } else {
-            document.getElementById('queueOverlay').classList.add('hidden');
-            triggerAnalysis(); 
+            const sm = document.getElementById('skeletonMessage');
+            if(sm) sm.innerText = data.message;
         }
-    } catch (e) {
-        setTimeout(pollQueueStatus, 5000);
-    }
+    });
+    
+    es.addEventListener('result', (e) => {
+        const data = JSON.parse(e.data);
+        es.close();
+        renderResults(data);
+    });
+    
+    es.addEventListener('error', (e) => {
+        es.close();
+        UIState.hideLoading();
+        try {
+            const data = JSON.parse(e.data);
+            UIState.showError(data.detail || "Stream connection lost.");
+        } catch {
+            UIState.showError("Stream connection lost or timed out.");
+        }
+    });
 }
 
-async function triggerAnalysis() {
-    UIState.setLoading("Analyzing Medical Data", "Mistral IQ is mapping your condition to policy terms...");
+function renderSkeletons(msg = "Analyzing...") {
+    DOM.heroSection.classList.add('hidden');
+    DOM.resultsSection.classList.remove('hidden');
+    DOM.endSessionBtn.classList.remove('hidden');
+    DOM.reportTimestamp.textContent = `Live Stream Active`;
+    DOM.disclaimerText.textContent = "Awaiting final analysis...";
     
-    try {
-        const response = await fetch('/analyze', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ session_id: sessionId })
-        });
-        
-        const data = await response.json();
-        
-        if (data.status === 'queued') {
-            UIState.hideLoading();
-            document.getElementById('queueOverlay').classList.remove('hidden');
-            document.getElementById('queuePosition').innerText = `${data.position} / ${data.total}`;
-            document.getElementById('queueWait').innerText = `~${data.wait_estimate} minutes`;
-            pollQueueStatus();
-            return;
-        }
-
-        if (data.status === 'success') {
-            renderResults(data);
-            UIState.hideLoading();
-            document.getElementById('resultsSection').scrollIntoView({ behavior: 'smooth' });
-        } else {
-            throw new Error(data.detail || "Analysis failed");
-        }
-    } catch (error) {
-        UIState.hideLoading();
-        showError(error.message);
-    }
+    const content = `
+        <div class="result-card clean-card span-2 skeleton-card">
+            <h3>System Status</h3>
+            <p id="skeletonMessage" style="color: var(--primary); font-weight: bold; margin-bottom: 1rem;">>> ${msg}</p>
+            <div class="sk-line long"></div>
+            <div class="sk-line long"></div>
+            <div class="sk-line medium"></div>
+        </div>
+        <div class="result-card clean-card skeleton-card">
+            <div class="sk-title"></div>
+            <div class="sk-line long"></div><div class="sk-line short"></div>
+        </div>
+        <div class="result-card clean-card skeleton-card">
+            <div class="sk-title"></div>
+            <div class="sk-line medium"></div><div class="sk-line long"></div>
+        </div>
+        <div class="result-card clean-card span-2 skeleton-card">
+            <div class="sk-title"></div>
+            <div class="sk-box"></div>
+            <div class="sk-line long"></div>
+        </div>
+    `;
+    DOM.resultsContent.innerHTML = content;
+    document.getElementById('resultsSection').scrollIntoView({ behavior: 'smooth' });
 }
 
 async function upload(file, type) {
@@ -206,12 +227,12 @@ function renderResults(data) {
     DOM.disclaimerText.textContent = data?.disclaimer || "Medical disclaimer applies.";
     
     const content = `
-        <div class="result-card glass-card span-2">
+        <div class="result-card clean-card span-2">
             <h3>Health Summary</h3>
             <p class="main-summary">${String(data?.summary || 'N/A')}</p>
         </div>
 
-        <div class="result-card glass-card">
+        <div class="result-card clean-card">
             <h3>Abnormal Parameters</h3>
             <div class="list-container">
                 ${(data?.abnormal_explanations || []).map(e => `
@@ -222,40 +243,36 @@ function renderResults(data) {
             </div>
         </div>
 
-        <div class="result-card glass-card">
+        <div class="result-card clean-card">
             <h3>Mapping Patterns</h3>
             <ul class="simple-list">
                 ${(data?.pattern_explanation || []).map(p => `<li>${String(p)}</li>`).join('')}
             </ul>
         </div>
 
-        <div class="result-card glass-card">
+        <div class="result-card clean-card">
             <h3>Future Risk Outlook</h3>
             <div class="outlook-grid">
                 <div class="outlook-item">
                     <strong>Short:</strong> ${String(data?.risk_outlook?.short_term || 'Stable')}
-                    <span class="badg mini">${String(data?.risk_outlook?.short_term_multiplier || '')}</span>
                 </div>
                 <div class="outlook-item">
                     <strong>Medium:</strong> ${String(data?.risk_outlook?.medium_term || 'Stable')}
-                    <span class="badg mini warn">${String(data?.risk_outlook?.medium_term_multiplier || '')}</span>
                 </div>
                 <div class="outlook-item">
                     <strong>Long:</strong> ${String(data?.risk_outlook?.long_term || 'Stable')}
-                    <span class="badg mini crit">${String(data?.risk_outlook?.long_term_multiplier || '')}</span>
                 </div>
             </div>
         </div>
 
-        <div class="result-card glass-card">
+        <div class="result-card clean-card">
             <h3>Safety Directives</h3>
             <ul class="simple-list">${(data?.recommendations || []).map(r => `<li>${String(r)}</li>`).join('')}</ul>
         </div>
 
-        <div class="result-card glass-card insurance-highlight span-2">
+        <div class="result-card clean-card insurance-highlight span-2">
             <div class="r-head">
                 <h3>Insurance Intelligence</h3>
-                <div class="badg error">Potential Cost Hike: ${String(data?.insurance?.potential_out_of_pocket_increase || '0%')}</div>
             </div>
             <div class="mapping-grid">
                 <div class="map-section covered">
@@ -263,7 +280,7 @@ function renderResults(data) {
                     <ul>${(data?.insurance?.covered || []).map(i => `<li>${String(i)}</li>`).join('')}</ul>
                 </div>
                 <div class="map-section conditional">
-                    <h4>Wait Periods / Limits</h4>
+                    <h4>Wait Periods</h4>
                     <ul>${(data?.insurance?.conditional || []).map(i => `<li>${String(i)}</li>`).join('')}</ul>
                 </div>
                 <div class="map-section excluded">
@@ -277,19 +294,17 @@ function renderResults(data) {
             </div>
         </div>
 
-        <div class="result-card glass-card span-2 future-map-card">
+        <div class="result-card clean-card span-2 future-map-card">
             <div class="card-header">
                 <h3>Vision 2027: Coverage & Out-of-Pocket Roadmap</h3>
-                <p class="section-desc">If current health trends continue into diagnoses next year:</p>
             </div>
             
             <div class="table-container">
                 <table class="future-table">
                     <thead>
                         <tr>
-                            <th>Trend Identified</th>
+                            <th>Trend</th>
                             <th>Potential Diagnosis</th>
-                            <th>Future Severity</th>
                             <th>Insurance Confirmation</th>
                         </tr>
                     </thead>
@@ -298,11 +313,9 @@ function renderResults(data) {
                             <tr>
                                 <td><span class="t-pattern">${String(m?.pattern || 'Trend')}</span></td>
                                 <td><strong class="t-condition">${String(m?.future_condition || 'Risk')}</strong></td>
-                                <td><span class="badg mini warn">${String(m?.severity_trend || 'Low')}</span></td>
                                 <td>
                                     <div class="t-status">
                                         ${String(m?.coverage_status || 'Checking...')}
-                                        <div class="t-gap">Risk Gap: ${String(m?.coverage_gap_risk || 'N/A')}</div>
                                     </div>
                                 </td>
                             </tr>

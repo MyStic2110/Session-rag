@@ -1,14 +1,8 @@
 ---
-title: GhostPolicy 2.0
-emoji: 🛡️
-colorFrom: purple
-colorTo: indigo
-sdk: docker
-pinned: false
-app_port: 7860
+title: LumeHealth
 ---
 
-# GhostPolicy 2.0 | Zero-Persistence Health & Insurance RAG
+# LumeHealth | AI-Powered Health & Insurance Intelligence
 
 A secure, session-based intelligence mapping health reports to insurance policy coverage with zero persistence.
 
@@ -18,4 +12,4 @@ A secure, session-based intelligence mapping health reports to insurance policy 
 3. Push the contents of this repository.
 4. Go to **Settings** → **Variables and Secrets** → Add your `MISTRAL_API_KEY`.
 
-**Live Demo will be available at: https://huggingface.co/spaces/YOUR_NAME/GhostPolicy**
+**Live Demo will be available at: https://huggingface.co/spaces/YOUR_NAME/LumeHealth**

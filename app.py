@@ -11,9 +11,9 @@ from dotenv import load_dotenv
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import RedirectResponse
+from fastapi.responses import RedirectResponse, StreamingResponse
 from pydantic import BaseModel
-from mistralai.client import Mistral
+import httpx
 
 load_dotenv(override=True)
 
@@ -27,7 +27,7 @@ WAITING_QUEUE: List[str] = []
 ACTIVE_ANALYSES_COUNT = 0
 QUEUE_LOCK = asyncio.Lock()
 
-app = FastAPI(title="GhostPolicy - Health & Insurance Intelligence")
+app = FastAPI(title="LumeHealth - Medical AI & Insurance Intelligence")
 
 app.add_middleware(
     CORSMiddleware,
@@ -36,13 +36,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-def get_mistral_client() -> Mistral:
-    key = os.environ.get("MISTRAL_API_KEY")
-    if not key:
-        print("[!] ERROR: Mistral API key not configured")
-        raise HTTPException(status_code=500, detail="Mistral API key not configured")
-    return Mistral(api_key=key)
 
 static_dir = os.path.join(os.path.dirname(__file__), "static")
 os.makedirs(static_dir, exist_ok=True)
@@ -77,10 +70,10 @@ async def cleanup_sessions_job():
             try:
                 session_data = SESSION_STORE.get(session_id)
                 if session_data and "mistral_file_ids" in session_data:
-                    client = get_mistral_client()
                     for f_id in session_data["mistral_file_ids"]:
                         try:
-                            client.files.delete(file_id=f_id)
+                            async with httpx.AsyncClient() as client:
+                                await client.delete(f"http://localhost:8001/file/{f_id}")
                         except Exception:
                             pass
             except Exception:
@@ -115,11 +108,11 @@ async def end_session(request: SessionEndRequest):
     session_id = request.session_id
     if session_id in SESSION_STORE:
         try:
-            client = get_mistral_client()
             session_data = SESSION_STORE[session_id]
             for f_id in session_data["mistral_file_ids"]:
                 try:
-                    client.files.delete(file_id=f_id)
+                    async with httpx.AsyncClient() as client:
+                        await client.delete(f"http://localhost:8001/file/{f_id}")
                 except Exception:
                     pass
         except Exception:
@@ -144,7 +137,6 @@ async def upload_document(
 ):
     print(f"[*] UPLOADING: {doc_type.upper()} file ({file.filename}) for session {session_id[:8]}...")
     session = get_session(session_id)
-    client = get_mistral_client()
     
     raw_content = await file.read()
     content_bytes = cast(bytes, raw_content)
@@ -152,31 +144,20 @@ async def upload_document(
     if len(content_bytes) > 10 * 1024 * 1024:
         raise HTTPException(status_code=400, detail="File too large. Maximum size is 10MB.")
     
-    tmp_path = ""
     try:
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
-            tmp.write(content_bytes)
-            tmp_path = tmp.name
-        
-        print(f"[*] MISTRAL OCR: Processing {file.filename}...")
-        with open(tmp_path, "rb") as f:
-            uploaded_file = client.files.upload(
-                file={"file_name": file.filename, "content": f},
-                purpose="ocr"
-            )
-        
-        session["mistral_file_ids"].append(uploaded_file.id)
-        
-        signed_url = client.files.get_signed_url(file_id=uploaded_file.id)
-        ocr_response = client.ocr.process(
-            model="mistral-ocr-2512",
-            document={"type": "document_url", "document_url": signed_url.url}
-        )
-        
-        full_text = ""
-        for page in ocr_response.pages:
-            full_text += page.markdown + "\n\n"
+        print(f"[*] MISTRAL OCR: Forwarding {file.filename} to LLM service...")
+        async with httpx.AsyncClient(timeout=120.0) as client:
+            files = {'file': (file.filename, content_bytes, file.content_type)}
+            data = {'doc_type': doc_type}
+            resp = await client.post("http://localhost:8001/ocr", data=data, files=files)
+            if resp.status_code != 200:
+                raise Exception(resp.text)
             
+            res_data = resp.json()
+            full_text = res_data["text"]
+            
+        session["mistral_file_ids"].append(res_data["file_id"])
+        
         if doc_type == "health":
             session["health_text"] = full_text
         else:
@@ -187,9 +168,6 @@ async def upload_document(
     except Exception as e:
         print(f"[!] OCR ERROR: {str(e)}")
         raise HTTPException(status_code=500, detail=f"OCR failed: {str(e)}")
-    finally:
-        if tmp_path and os.path.exists(tmp_path):
-            os.unlink(tmp_path)
             
     return {"status": "success", "type": doc_type}
 
@@ -238,114 +216,18 @@ async def analyze_health_insurance(request: AnalyzeRequest):
         raise HTTPException(status_code=400, detail="Both Health Report and Insurance Policy must be uploaded first.")
 
     try:
-        client = get_mistral_client()
-        print("[*] LAYER 2: Extracting deterministic health/policy facts...")
-        extraction_prompt = f"""
-        Extract deterministic data from the following health and insurance texts.
-        Output ONLY valid JSON.
-        
-        HEALTH TEXT:
-        {session['health_text'][:10000]}
-        
-        POLICY TEXT:
-        {session['policy_text'][:10000]}
-        
-        JSON Structure:
-        {{
-            "health": {{
-                "abnormal_parameters": ["string: parameter name only"],
-                "domain_scores": {{ "cardio": 0-100, "liver": 0-100, "respiratory": 0-100, "metabolic": 0-100 }},
-                "detected_patterns": ["string: identified trend"],
-                "risk_projection": {{ "short": "string", "medium": "string", "long": "string" }},
-                "overall_risk": "low|moderate|high"
-            }},
-            "insurance": {{
-                "matched_policy_items": ["string: benefit name"],
-                "coverage_details": {{ "covered": ["string"], "conditional": ["string"], "excluded": ["string"] }},
-                "waiting_periods": ["string: period description"]
-            }}
-        }}
-        STRICT RULES: 
-        1. NO conversational text. 
-        2. NO markdown formatting outside the JSON block.
-        3. All numeric scores must be INTEGERS.
-        4. Do NOT hallucinate data not present in texts.
-        """
-        extract_res = client.chat.complete(
-            model="mistral-large-latest",
-            messages=[{"role": "user", "content": extraction_prompt}],
-            response_format={"type": "json_object"}
-        )
-        deterministic_data = json.loads(extract_res.choices[0].message.content)
-
-        print("[*] LAYER 3: Generating final explanation and mapping...")
-        system_prompt = """
-        You are a health and insurance explanation assistant.
-        You DO NOT perform any medical analysis, scoring, inference, or insurance eligibility decisions.
-        All health analysis and insurance interpretations are provided to you as deterministic data.
-        Your role is to:
-        1. Explain the health data in simple terms
-        2. Explain how health status relates to policy coverage
-        3. Clearly present coverage strictly based on provided policy mapping
-        STRICT RULES:
-        - DO NOT calculate or override data.
-        - DO NOT diagnose or predict specific diseases.
-        - DO NOT give financial or medical advice.
-        - Use CLEAR, CALM, and SUPPORTIVE tone.
-        - Output STRICT JSON format as specified.
-        SAFETY STATEMENT (MANDATORY):
-        "This is not a medical diagnosis or insurance advice. Please consult a qualified healthcare professional and your insurance provider for detailed guidance."
-        """
-        final_prompt = f"""
-        INPUT DATA: {json.dumps(deterministic_data)}
-        TASK: Generate the explanation following the 7 sections. 
-        Section: "Future Coverage Mapping"
-        For each map, use an "Intelligent Re-analysis" tone.
-        Explain the mapping as: "Your insurance will cover this if you are within the policy period, otherwise you will pay from your pocket."
-        Be specific about WHY (e.g. waiting periods, exclusions).
-        STRICT SCHEME ENFORCEMENT:
-        Every field below MUST be a STRING. Do NOT return sub-objects or arrays where a string is expected.
-        STRICT SCHEME ENFORCEMENT:
-        Every field below MUST be exactly as specified. 
-        Strings must be meaningful explanations, not just "N/A" unless truly missing.
-        REQUIRED OUTPUT JSON FORMAT:
-        {{
-            "summary": "1-2 paragraph executive summary",
-            "abnormal_explanations": [{{ "parameter": "name", "explanation": "clear medical explanation" }}],
-            "pattern_explanation": ["explanation of trend 1", "explanation of trend 2"],
-            "risk_outlook": {{ 
-                "short_term": "Optimistic|Stable|Concerning", 
-                "medium_term": "Optimistic|Stable|Concerning", 
-                "long_term": "Optimistic|Stable|Concerning", 
-                "short_term_multiplier": "+0% to +100%", 
-                "medium_term_multiplier": "+0% to +100%", 
-                "long_term_multiplier": "+0% to +100%" 
-            }},
-            "recommendations": ["Actionable step 1", "Actionable step 2"],
-            "insurance": {{ 
-                "covered": ["Policy Item A", "Policy Item B"], 
-                "conditional": ["Condition X", "Condition Y"], 
-                "not_covered": ["Exclusion Z"], 
-                "future_cost_awareness": "Detailed impact on future premiums/costs", 
-                "potential_out_of_pocket_increase": "Percentage string" 
-            }},
-            "future_coverage_mapping": [{{ 
-                "pattern": "Health Trend", 
-                "future_condition": "Likely Diagnosis", 
-                "coverage_status": "Covered|Excluded|Partial", 
-                "coverage_gap_risk": "High|Medium|Low", 
-                "severity_trend": "Increasing|Stable|Decreasing" 
-            }}],
-            "disclaimer": "Safety statement"
-        }}
-        """
-        final_res = client.chat.complete(
-            model="mistral-large-latest",
-            messages=[{"role": "system", "content": system_prompt}, {"role": "user", "content": final_prompt}],
-            response_format={"type": "json_object"}
-        )
-        analysis_data = json.loads(final_res.choices[0].message.content)
-        analysis_data["status"] = "success"
+        print("[*] Forwarding to LLM microservice Layer 2 & 3...")
+        async with httpx.AsyncClient(timeout=120.0) as client:
+            payload = {
+                "health_text": session['health_text'],
+                "policy_text": session['policy_text']
+            }
+            resp = await client.post("http://localhost:8001/analyze", json=payload)
+            if resp.status_code != 200:
+                raise Exception(resp.text)
+            
+            analysis_data = resp.json()
+            
         print("[OK] ANALYSIS COMPLETE: Intelligent Mapping finished.")
         return analysis_data
         
@@ -357,6 +239,58 @@ async def analyze_health_insurance(request: AnalyzeRequest):
     finally:
         async with QUEUE_LOCK:
             ACTIVE_ANALYSES_COUNT -= 1
+
+@app.get("/analyze/stream/{session_id}")
+async def analyze_health_insurance_stream(session_id: str):
+    global ACTIVE_ANALYSES_COUNT
+    print(f"[*] ANALYSIS STREAM REQUEST: Session {session_id[:8]}")
+    
+    session = get_session(session_id)
+    
+    if not session.get("health_text") or not session.get("policy_text"):
+        raise HTTPException(status_code=400, detail="Both Health Report and Insurance Policy must be uploaded first.")
+    
+    async def event_generator():
+        global ACTIVE_ANALYSES_COUNT
+        
+        while True:
+            locked = False
+            async with QUEUE_LOCK:
+                if ACTIVE_ANALYSES_COUNT < MAX_ACTIVE_ANALYSES or (session_id in WAITING_QUEUE and WAITING_QUEUE[0] == session_id):
+                    if session_id in WAITING_QUEUE:
+                        WAITING_QUEUE.remove(session_id)
+                    ACTIVE_ANALYSES_COUNT += 1
+                    locked = True
+                else:
+                    if session_id not in WAITING_QUEUE:
+                        WAITING_QUEUE.append(session_id)
+                    pos = WAITING_QUEUE.index(session_id) + 1
+                    total = len(WAITING_QUEUE)
+                    
+            if locked:
+                break
+            
+            yield f"event: queue\ndata: {json.dumps({'position': pos, 'total': total, 'wait_estimate': pos * 2})}\n\n"
+            await asyncio.sleep(5)
+            
+        try:
+            print("[*] Forwarding to LLM microservice Stream...")
+            payload = {
+                "health_text": session['health_text'],
+                "policy_text": session['policy_text']
+            }
+            async with httpx.AsyncClient(timeout=120.0) as client:
+                async with client.stream("POST", "http://localhost:8001/analyze/stream", json=payload) as response:
+                    async for chunk in response.aiter_text():
+                        yield chunk
+        except Exception as e:
+            print(f"[!] ANALYSIS STREAM ERROR: {str(e)}")
+            yield f"event: error\ndata: {json.dumps({'detail': str(e)})}\n\n"
+        finally:
+            async with QUEUE_LOCK:
+                ACTIVE_ANALYSES_COUNT -= 1
+
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8000))

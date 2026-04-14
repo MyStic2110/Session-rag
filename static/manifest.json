@@ -1,11 +1,11 @@
 {
-  "name": "GhostPolicy RAG",
-  "short_name": "GhostPolicy",
+  "name": "LumeHealth RAG",
+  "short_name": "LumeHealth",
   "description": "Zero-Trace Insurance Intelligence RAG",
   "start_url": "/static/index.html",
   "display": "standalone",
-  "background_color": "#030712",
-  "theme_color": "#030712",
+  "background_color": "#F8FAFC",
+  "theme_color": "#2563EB",
   "icons": [
     {
       "src": "icon.svg",
