@@ -57,7 +57,8 @@ async def root():
 
 @app.on_event("startup")
 async def startup_event():
-    print("[INFO] LumeHealth Backend Starting...")
+    print(f"[INFO] LumeHealth Backend Starting...")
+    print(f"[INFO] Target LLM Service: {LLM_SERVICE_BASE_URL}")
     asyncio.create_task(cleanup_sessions_job())
 
 async def cleanup_sessions_job():
@@ -168,8 +169,14 @@ async def upload_document(
         
         print(f"[OK] OCR COMPLETE: {len(full_text)} chars extracted.")
             
+    except httpx.ConnectError:
+        error_msg = f"Could not connect to LLM Service at {LLM_SERVICE_BASE_URL}. Verify the service is running and the URL is correct."
+        print(f"[!] CONNECTION ERROR: {error_msg}")
+        raise HTTPException(status_code=503, detail=error_msg)
     except Exception as e:
         print(f"[!] OCR ERROR: {str(e)}")
+        # Log more context for debugging
+        print(f"[*] Target URL was: {LLM_SERVICE_BASE_URL}/ocr")
         raise HTTPException(status_code=500, detail=f"OCR failed: {str(e)}")
             
     return {"status": "success", "type": doc_type}
