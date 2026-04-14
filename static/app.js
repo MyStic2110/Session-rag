@@ -161,7 +161,7 @@ function resetTokenTracker() {
 // ──────────────────────────────────────────────────────────────────────────
 
 function triggerAnalysis() {
-    UIState.setLoading("Establishing Connection", "Connecting to Mistral IQ Streaming Engine...");
+    UIState.setLoading("Establishing Connection", "Connecting to Live Intelligence Engine...");
     showTokenTracker();
 
     const es = new EventSource(`/analyze/stream/${sessionId}`);
@@ -218,7 +218,7 @@ function renderSkeletons(msg = "Analyzing...") {
     DOM.resultsSection.classList.remove('hidden');
     DOM.endSessionBtn.classList.remove('hidden');
     DOM.reportTimestamp.textContent = `Live Stream Active`;
-    DOM.disclaimerText.textContent = "Awaiting final analysis...";
+    // Removed 'Awaiting final analysis...' set to disclaimerText to avoid layout breaks
     
     const content = `
         <div class="result-card clean-card span-2 skeleton-card">
