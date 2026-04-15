@@ -101,6 +101,11 @@ function handleFileSelect(file, labelEl, type, zone) {
         return;
     }
 
+    if (file.size > 5 * 1024 * 1024) {
+        UIState.showError('File Too Large: Maximum allowed size is 5MB.');
+        return;
+    }
+
     if (type === 'health') {
         healthFile = file;
     } else {
@@ -344,20 +349,33 @@ function renderResults(data) {
                             <th>Trend</th>
                             <th>Potential Diagnosis</th>
                             <th>Insurance Confirmation</th>
+                            <th>Source / Proof</th>
                         </tr>
                     </thead>
                     <tbody>
-                        ${(data?.future_coverage_mapping || []).map(m => `
-                            <tr>
-                                <td><span class="t-pattern">${String(m?.pattern || 'Trend')}</span></td>
-                                <td><strong class="t-condition">${String(m?.future_condition || 'Risk')}</strong></td>
-                                <td>
-                                    <div class="t-status">
-                                        ${String(m?.coverage_status || 'Checking...')}
-                                    </div>
-                                </td>
-                            </tr>
-                        `).join('')}
+                        ${(data?.future_coverage_mapping || []).map(m => {
+                            const status = String(m?.coverage_status || 'Checking...').toLowerCase();
+                            const statusClass = status.includes('covered') && !status.includes('not') ? 'covered' : 
+                                              status.includes('partial') ? 'partial' : 
+                                              status.includes('excluded') || status.includes('not covered') ? 'excluded' : '';
+                            
+                            return `
+                                <tr>
+                                    <td><span class="t-pattern">${String(m?.pattern || 'Trend')}</span></td>
+                                    <td><strong class="t-condition">${String(m?.future_condition || 'Risk')}</strong></td>
+                                    <td>
+                                        <div class="t-status ${statusClass}">
+                                            ${String(m?.coverage_status || 'Checking...')}
+                                        </div>
+                                    </td>
+                                    <td>
+                                        <div class="t-source" style="font-size: 0.75rem; color: var(--text-tertiary); font-style: italic;">
+                                            ${String(m?.source_proof || 'Mapping evidence...')}
+                                        </div>
+                                    </td>
+                                </tr>
+                            `;
+                        }).join('')}
                     </tbody>
                 </table>
             </div>

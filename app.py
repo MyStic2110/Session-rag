@@ -148,8 +148,8 @@ async def upload_document(
     raw_content = await file.read()
     content_bytes = cast(bytes, raw_content)
     
-    if len(content_bytes) > 10 * 1024 * 1024:
-        raise HTTPException(status_code=400, detail="File too large. Maximum size is 10MB.")
+    if len(content_bytes) > 5 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="File too large. Maximum size is 5MB.")
     
     try:
         print(f"[*] MISTRAL OCR: Forwarding {file.filename} to LLM service...")
