@@ -838,3 +838,71 @@ section.how-it-works .container {
 .agent-node[data-agent="optical"] .node-icon { background: rgba(59, 130, 246, 0.1); color: #3B82F6; }
 .agent-node[data-agent="extraction"] .node-icon { background: rgba(139, 92, 246, 0.1); color: #8B5CF6; }
 .agent-node[data-agent="reasoning"] .node-icon { background: rgba(16, 185, 129, 0.1); color: #10B981; }
+
+/* ── View Transitions & Seamless Handoffs ──────────────────────────── */
+html {
+    scroll-behavior: smooth;
+}
+
+.view-transition {
+    transition: opacity 0.8s cubic-bezier(0.4, 0, 0.2, 1), 
+                transform 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.view-fade-out {
+    opacity: 0 !important;
+    transform: translateY(-30px) !important;
+    pointer-events: none;
+}
+
+.view-fade-in {
+    animation: slideInUpPremium 0.9s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+@keyframes slideInUpPremium {
+    from {
+        opacity: 0;
+        transform: translateY(40px) scale(0.98);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+}
+
+/* ── Enhanced Skeleton Shimmer ────────────────────────────────────── */
+.skeleton-card {
+    position: relative;
+    overflow: hidden;
+    background: rgba(255, 255, 255, 0.6) !important;
+    backdrop-filter: blur(8px);
+}
+
+.skeleton-card::after {
+    content: "";
+    position: absolute;
+    top: 0; right: 0; bottom: 0; left: 0;
+    transform: translateX(-100%);
+    background: linear-gradient(
+        90deg,
+        rgba(255, 255, 255, 0) 0,
+        rgba(255, 255, 255, 0.5) 20%,
+        rgba(255, 255, 255, 0.8) 50%,
+        rgba(255, 255, 255, 0.5) 80%,
+        rgba(255, 255, 255, 0) 100%
+    );
+    animation: shimmerEffect 2.5s infinite;
+}
+
+@keyframes shimmerEffect {
+    100% {
+        transform: translateX(100%);
+    }
+}
+
+.sk-line {
+    height: 10px;
+    background: rgba(226, 232, 240, 0.8);
+    margin-bottom: 0.85rem;
+    border-radius: 6px;
+}

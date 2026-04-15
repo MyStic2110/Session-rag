@@ -8,6 +8,7 @@ const DOM = {
     analyzeBtn: document.getElementById('analyzeBtn'),
     uploadStatus: document.getElementById('uploadStatus'),
     heroSection: document.getElementById('heroSection'),
+    landingView: document.getElementById('landingView'),
     resultsSection: document.getElementById('resultsSection'),
     resultsContent: document.getElementById('resultsContent'),
     disclaimerText: document.getElementById('disclaimerText'),
@@ -230,11 +231,18 @@ function triggerAnalysis() {
 }
 
 function renderSkeletons(msg = "Analyzing...") {
-    DOM.heroSection.classList.add('hidden');
-    DOM.resultsSection.classList.remove('hidden');
-    DOM.endSessionBtn.classList.remove('hidden');
-    DOM.reportTimestamp.textContent = `Live Stream Active`;
-    // Removed 'Awaiting final analysis...' set to disclaimerText to avoid layout breaks
+    // ── Cinematic Transition ──
+    DOM.landingView.classList.add('view-fade-out');
+    
+    setTimeout(() => {
+        DOM.landingView.classList.add('hidden');
+        DOM.resultsSection.classList.remove('hidden');
+        DOM.resultsSection.classList.add('view-fade-in');
+        DOM.endSessionBtn.classList.remove('hidden');
+        
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+        DOM.reportTimestamp.textContent = `Live Stream Active`;
+    }, 400); // Wait for fade-out to begin
     
     const content = `
         <div class="result-card clean-card span-2 skeleton-card">
