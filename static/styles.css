@@ -736,3 +736,105 @@ section.how-it-works .container {
 .risk-tag.high { background: #FEE2E2; color: #EF4444; }
 .risk-tag.moderate { background: #FEF3C7; color: #F59E0B; }
 .risk-tag.low { background: #DCFCE7; color: #10B981; }
+
+
+/* Agent Pipeline Section */
+.agent-pipeline {
+    margin-top: 6rem;
+    padding: 4rem 0;
+    background: rgba(255, 255, 255, 0.4);
+    border-radius: 2rem;
+    border: 1px solid var(--border-light);
+}
+
+.pipeline-header {
+    text-align: center;
+    margin-bottom: 4rem;
+}
+
+.section-subtitle {
+    color: var(--text-secondary);
+    font-size: 1.125rem;
+    margin-top: 0.5rem;
+}
+
+.agent-track {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+    max-width: 600px;
+    margin: 0 auto;
+    position: relative;
+}
+
+@media (min-width: 1024px) {
+    .agent-track {
+        flex-direction: row;
+        max-width: 100%;
+        align-items: stretch;
+    }
+}
+
+.agent-node {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    gap: 1.5rem;
+    padding: 1.5rem;
+    background: var(--bg-panel);
+    border: 1px solid var(--border-light);
+    border-radius: 1.25rem;
+    transition: all 0.3s ease;
+    box-shadow: var(--shadow-sm);
+}
+
+.agent-node:hover {
+    transform: translateY(-4px);
+    box-shadow: var(--shadow-md);
+    border-color: var(--accent-blue);
+}
+
+.node-icon {
+    width: 48px;
+    height: 48px;
+    background: var(--accent-soft);
+    color: var(--accent-blue);
+    border-radius: 1rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
+.node-info h4 {
+    font-size: 1rem;
+    font-weight: 700;
+    margin-bottom: 0.25rem;
+    color: var(--text-primary);
+}
+
+.node-info p {
+    font-size: 0.875rem;
+    color: var(--text-secondary);
+    line-height: 1.4;
+}
+
+.pipeline-connector {
+    width: 2px;
+    height: 20px;
+    background: var(--border-light);
+    margin: 0 auto;
+    position: relative;
+}
+
+@media (min-width: 1024px) {
+    .pipeline-connector {
+        width: 32px;
+        height: 2px;
+        margin: auto 0;
+    }
+}
+
+.agent-node[data-agent="optical"] .node-icon { background: rgba(59, 130, 246, 0.1); color: #3B82F6; }
+.agent-node[data-agent="extraction"] .node-icon { background: rgba(139, 92, 246, 0.1); color: #8B5CF6; }
+.agent-node[data-agent="reasoning"] .node-icon { background: rgba(16, 185, 129, 0.1); color: #10B981; }

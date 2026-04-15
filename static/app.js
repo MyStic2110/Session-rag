@@ -168,6 +168,11 @@ function resetTokenTracker() {
 function triggerAnalysis() {
     UIState.setLoading("Establishing Connection", "Connecting to Live Intelligence Engine...");
     showTokenTracker();
+    
+    // Reset Token UI
+    animateTokenValue(DOM.promptTokens, 0);
+    animateTokenValue(DOM.completionTokens, 0);
+    animateTokenValue(DOM.totalTokens, 0);
 
     const es = new EventSource(`/analyze/stream/${sessionId}`);
 
@@ -198,6 +203,12 @@ function triggerAnalysis() {
         animateTokenValue(DOM.promptTokens,     t.prompt     ?? 0);
         animateTokenValue(DOM.completionTokens, t.completion ?? 0);
         animateTokenValue(DOM.totalTokens,      t.total      ?? 0);
+    });
+
+    es.addEventListener('retry', (e) => {
+        const data = JSON.parse(e.data);
+        DOM.progressSubtitle.textContent = `Engaging ${data.agent_alias}...`;
+        UIState.showToast(`Provider busy. Retrying with ${data.agent_alias}...`);
     });
 
     es.addEventListener('result', (e) => {
