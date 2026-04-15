@@ -58,6 +58,15 @@ app.mount("/static", StaticFiles(directory=static_dir, html=True), name="static"
 async def root():
     return RedirectResponse(url="/static/index.html")
 
+@app.get("/health")
+async def health_check():
+    return {
+        "status": "online",
+        "service": "LumeHealth Main Backend",
+        "sessions_active": len(SESSION_STORE),
+        "llm_service": LLM_SERVICE_BASE_URL
+    }
+
 @app.on_event("startup")
 async def startup_event():
     print(f"[INFO] LumeHealth Backend Starting...")
@@ -131,7 +140,8 @@ async def end_session(request: SessionEndRequest):
 
 def get_session(session_id: str) -> Dict[str, Any]:
     if session_id not in SESSION_STORE:
-        raise HTTPException(status_code=404, detail="Session not found or expired")
+        print(f"[!] SESSION NOT FOUND: {session_id}. Store size: {len(SESSION_STORE)}")
+        raise HTTPException(status_code=404, detail="Session expired or backend restarted. Please refresh.")
     session_data = cast(Dict[str, Any], SESSION_STORE[session_id])
     session_data["last_accessed"] = datetime.now()
     return session_data

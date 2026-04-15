@@ -258,6 +258,10 @@ async function upload(file, type) {
     fd.append('file', file);
     
     const res = await fetch('/upload', { method: 'POST', body: fd });
+    if (res.status === 404) {
+        UIState.showError("Session expired or backend restarted. Please refresh the page.");
+        throw new Error("Session expired");
+    }
     if (!res.ok) throw new Error(`Document verification failed for ${type} report`);
 }
 
@@ -313,6 +317,31 @@ function renderResults(data) {
             <ul class="simple-list">${(data?.recommendations || []).map(r => `<li>${String(r)}</li>`).join('')}</ul>
         </div>
 
+        ${(data?.insurance?.contextual_guardrails || []).length > 0 ? `
+        <div class="result-card clean-card span-2">
+            <h3>Critical Policy Guardrails</h3>
+            <div class="guardrails-container">
+                ${data.insurance.contextual_guardrails.map(g => {
+                    const rRisk = String(g.red_lining_risk || 'Low').toLowerCase();
+                    return `
+                    <div class="guardrail-card">
+                        <div class="guardrail-header">
+                            <span class="guardrail-category">${String(g.category)}</span>
+                            <span class="red-line-badge ${rRisk}">
+                                Red Line Risk: ${String(g.red_lining_risk || 'Low')}
+                            </span>
+                        </div>
+                        <p class="guardrail-details">${String(g.limit_details)}</p>
+                        <div class="guardrail-meta">
+                            <span>Waiting Period: ${String(g.waiting_period || 'N/A')}</span>
+                            <span>Source: ${String(g.source_citation || 'Policy Section')}</span>
+                        </div>
+                    </div>
+                `}).join('')}
+            </div>
+        </div>
+        ` : ''}
+
         <div class="result-card clean-card insurance-highlight span-2">
             <div class="r-head">
                 <h3>Insurance Intelligence</h3>
@@ -349,7 +378,7 @@ function renderResults(data) {
                             <th>Trend</th>
                             <th>Potential Diagnosis</th>
                             <th>Insurance Confirmation</th>
-                            <th>Source / Proof</th>
+                            <th>Mapping Intel</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -358,7 +387,8 @@ function renderResults(data) {
                             const statusClass = status.includes('covered') && !status.includes('not') ? 'covered' : 
                                               status.includes('partial') ? 'partial' : 
                                               status.includes('excluded') || status.includes('not covered') ? 'excluded' : '';
-                            
+                            const rRisk = String(m?.red_line_risk || 'Low').toLowerCase();
+
                             return `
                                 <tr>
                                     <td><span class="t-pattern">${String(m?.pattern || 'Trend')}</span></td>
@@ -367,10 +397,16 @@ function renderResults(data) {
                                         <div class="t-status ${statusClass}">
                                             ${String(m?.coverage_status || 'Checking...')}
                                         </div>
+                                        <div class="risk-tag ${rRisk}">
+                                            Risk: ${String(m?.red_line_risk || 'Low')}
+                                        </div>
                                     </td>
                                     <td>
                                         <div class="t-source" style="font-size: 0.75rem; color: var(--text-tertiary); font-style: italic;">
                                             ${String(m?.source_proof || 'Mapping evidence...')}
+                                        </div>
+                                        <div class="intent-clarity">
+                                            Intent Clarity: ${String(m?.intent_clarity_explanation || 'Logical mapping active')}
                                         </div>
                                     </td>
                                 </tr>
