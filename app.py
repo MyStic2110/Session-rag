@@ -114,6 +114,8 @@ async def start_session():
         "last_accessed": datetime.now(),
         "health_text": "",
         "policy_text": "",
+        "health_filename": "",
+        "policy_filename": "",
         "mistral_file_ids": []
     }
     print(f"[INFO] NEW SESSION: {session_id}")
@@ -177,8 +179,10 @@ async def upload_document(
         
         if doc_type == "health":
             session["health_text"] = full_text
+            session["health_filename"] = file.filename
         else:
             session["policy_text"] = full_text
+            session["policy_filename"] = file.filename
         
         print(f"[OK] OCR COMPLETE: {len(full_text)} chars extracted.")
             
@@ -243,7 +247,9 @@ async def analyze_health_insurance(request: AnalyzeRequest):
         async with httpx.AsyncClient(timeout=120.0) as client:
             payload = {
                 "health_text": session['health_text'],
-                "policy_text": session['policy_text']
+                "policy_text": session['policy_text'],
+                "health_filename": session.get('health_filename'),
+                "policy_filename": session.get('policy_filename')
             }
             resp = await client.post(f"{LLM_SERVICE_BASE_URL}/analyze", json=payload)
             if resp.status_code != 200:
@@ -300,7 +306,9 @@ async def analyze_health_insurance_stream(session_id: str):
             print("[*] Forwarding to LLM microservice Stream...")
             payload = {
                 "health_text": session['health_text'],
-                "policy_text": session['policy_text']
+                "policy_text": session['policy_text'],
+                "health_filename": session.get('health_filename'),
+                "policy_filename": session.get('policy_filename')
             }
             async with httpx.AsyncClient(timeout=120.0) as client:
                 async with client.stream("POST", f"{LLM_SERVICE_BASE_URL}/analyze/stream", json=payload) as response:

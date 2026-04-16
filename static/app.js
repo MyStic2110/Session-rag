@@ -40,11 +40,38 @@ const UIState = {
     hideLoading() {
         DOM.progressOverlay.classList.add('hidden');
     },
-    showError(msg) {
-        DOM.errorMessage.textContent = msg;
-        DOM.errorToast.classList.remove('hidden');
-        setTimeout(() => DOM.errorToast.classList.add('hidden'), 5000);
+    showToast(msg, type = 'error') {
+        const container = document.getElementById('toastContainer');
+        if (!container) return;
+        
+        const toast = document.createElement('div');
+        toast.className = `toast ${type}`;
+        
+        const icon = type === 'error' ? '✕' : type === 'success' ? '✓' : '⚠';
+        
+        toast.innerHTML = `
+            <div class="toast-icon">${icon}</div>
+            <div class="toast-msg">${msg}</div>
+        `;
+        
+        container.appendChild(toast);
+        
+        setTimeout(() => {
+            toast.classList.add('fade-out');
+            setTimeout(() => toast.remove(), 400);
+        }, 4000);
     },
+    showError(msg) {
+        this.showToast(msg, 'error');
+        // Keep legacy for existing HTML if needed
+        if (DOM.errorMessage && DOM.errorToast) {
+            DOM.errorMessage.textContent = msg;
+            DOM.errorToast.classList.remove('hidden');
+            setTimeout(() => DOM.errorToast.classList.add('hidden'), 5000);
+        }
+    },
+    showSuccess(msg) { this.showToast(msg, 'success'); },
+    showWarning(msg) { this.showToast(msg, 'warning'); },
     showSection(sectionId) {
         [DOM.heroSection, DOM.resultsSection].forEach(s => {
             if (s) s.classList.add('hidden');
@@ -108,9 +135,19 @@ function handleFileSelect(file, labelEl, type, zone) {
     }
 
     if (type === 'health') {
+        if (policyFile && file.name === policyFile.name && file.size === policyFile.size) {
+            UIState.showError('Duplicate File: You are attempting to upload the same file for both Health and Policy.');
+            return;
+        }
         healthFile = file;
+        UIState.showSuccess('Medical Report verified.');
     } else {
+        if (healthFile && file.name === healthFile.name && file.size === healthFile.size) {
+            UIState.showError('Duplicate File: You are attempting to upload the same file for both Health and Policy.');
+            return;
+        }
         policyFile = file;
+        UIState.showSuccess('Insurance Policy verified.');
     }
 
     labelEl.textContent = file.name;
@@ -208,8 +245,8 @@ function triggerAnalysis() {
 
     es.addEventListener('retry', (e) => {
         const data = JSON.parse(e.data);
-        DOM.progressSubtitle.textContent = `Engaging ${data.agent_alias}...`;
-        UIState.showToast(`Provider busy. Retrying with ${data.agent_alias}...`);
+        DOM.progressSubtitle.textContent = `Optimizing ${data.agent_alias}...`;
+        UIState.showToast(`Neural Node busy. Rerouting to ${data.agent_alias}...`, 'warning');
     });
 
     es.addEventListener('result', (e) => {
@@ -282,6 +319,8 @@ async function upload(file, type) {
         throw new Error("Session expired");
     }
     if (!res.ok) throw new Error(`Document verification failed for ${type} report`);
+    
+    UIState.showSuccess(`${type.charAt(0).toUpperCase() + type.slice(1)} document processed successfully.`);
 }
 
 function renderResults(data) {
@@ -289,10 +328,25 @@ function renderResults(data) {
     DOM.resultsSection.classList.remove('hidden');
     DOM.endSessionBtn.classList.remove('hidden');
     
-    DOM.reportTimestamp.textContent = `Generated on ${new Date().toLocaleString()}`;
+    DOM.reportTimestamp.textContent = `Generated on ${new Date().toLocaleString()}${data.agent_alias ? ` | ${data.agent_alias}` : ''}`;
     DOM.disclaimerText.textContent = data?.disclaimer || "Medical disclaimer applies.";
     
-    const content = `
+    let content = "";
+
+    // Identity Mismatch Warning
+    if (data?.validation_warnings && data.validation_warnings.length > 0) {
+        content += `
+            <div class="validation-warning-banner span-2">
+                <div class="warning-icon">!</div>
+                <div class="warning-content">
+                    <h4>Identity Verification Note</h4>
+                    ${data.validation_warnings.map(w => `<p>${w}</p>`).join('')}
+                </div>
+            </div>
+        `;
+    }
+
+    content += `
         <div class="result-card clean-card span-2">
             <h3>Health Summary</h3>
             <p class="main-summary">${String(data?.summary || 'N/A')}</p>
