@@ -24,6 +24,10 @@ const DOM = {
     promptTokens: document.getElementById('promptTokens'),
     completionTokens: document.getElementById('completionTokens'),
     totalTokens: document.getElementById('totalTokens'),
+    // Advisor Lead
+    advisorBtn: document.getElementById('advisorBtn'),
+    advisorModal: document.getElementById('advisorModal'),
+    advisorForm: document.getElementById('advisorForm'),
 };
 
 let sessionId = null;
@@ -415,6 +419,35 @@ function renderResults(data) {
         </div>
         ` : ''}
 
+        <div class="result-card clean-card span-2">
+            <div class="confidence-indicator">
+                <div class="c-icon">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path><path d="m9 12 2 2 4-4"></path></svg>
+                </div>
+                <div class="c-text">
+                    <h4>Clinical Mapping Confidence: ${Math.round((data.confidence_score || 0.95) * 100)}%</h4>
+                    <p>Probability of logical alignment between clinical markers and policy text.</p>
+                </div>
+            </div>
+
+            <h3>Clinical Insight Indices</h3>
+            <div class="metrics-container">
+                ${Object.entries(data.health_metrics || {}).map(([key, val]) => {
+                    const level = val < 40 ? 'safe' : val < 70 ? 'monitor' : 'alert';
+                    return `
+                    <div class="metric-item">
+                        <div class="metric-label-row">
+                            <span class="metric-name">${key} Marker</span>
+                            <span class="metric-value">${val}%</span>
+                        </div>
+                        <div class="h-bar-container">
+                            <div class="h-bar-fill ${level}" data-value="${val}"></div>
+                        </div>
+                    </div>
+                `}).join('')}
+            </div>
+        </div>
+
         <div class="result-card clean-card insurance-highlight span-2">
             <div class="r-head">
                 <h3>Insurance Intelligence</h3>
@@ -450,6 +483,7 @@ function renderResults(data) {
                         <tr>
                             <th>Trend</th>
                             <th>Potential Diagnosis</th>
+                            <th>Expected Timeframe</th>
                             <th>Insurance Confirmation</th>
                             <th>Mapping Intel</th>
                         </tr>
@@ -466,6 +500,11 @@ function renderResults(data) {
                                 <tr>
                                     <td><span class="t-pattern">${String(m?.pattern || 'Trend')}</span></td>
                                     <td><strong class="t-condition">${String(m?.future_condition || 'Risk')}</strong></td>
+                                    <td>
+                                        <div class="t-timeframe" style="color: var(--primary); font-weight: 600; font-size: 0.9rem;">
+                                            ${String(m?.timeframe_years || 'Unknown')}
+                                        </div>
+                                    </td>
                                     <td>
                                         <div class="t-status ${statusClass}">
                                             ${String(m?.coverage_status || 'Checking...')}
@@ -492,18 +531,111 @@ function renderResults(data) {
     `;
     
     DOM.resultsContent.innerHTML = content;
+
+    // ── Animate Health Metrics ──
+    setTimeout(() => {
+        const bars = document.querySelectorAll('.h-bar-fill');
+        bars.forEach(bar => {
+            const val = bar.getAttribute('data-value');
+            if (val) bar.style.width = `${val}%`;
+        });
+    }, 300);
 }
 
-DOM.endSessionBtn.addEventListener('click', async () => {
-    if (!sessionId) return;
-    if (confirm("Permanently destroy this analysis session?")) {
-        resetTokenTracker();
-        await fetch('/session/end', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ session_id: sessionId })
+if (DOM.endSessionBtn) {
+    DOM.endSessionBtn.addEventListener('click', async () => {
+        if (!sessionId) return;
+        if (confirm("Permanently destroy this analysis session?")) {
+            await fetch('/session/end', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ session_id: sessionId })
+            });
+            location.reload();
+        }
+    });
+}
+
+// --- Advisor Partner Funnel ---
+function initAdvisorLeads() {
+    const btn = document.getElementById('advisorBtn');
+    const modal = document.getElementById('advisorModal');
+    const form = document.getElementById('advisorForm');
+    const closeBtns = document.querySelectorAll('.modal-close, .modal-backdrop');
+
+    const openModal = () => {
+        if (modal) {
+            modal.classList.remove('hidden');
+            document.body.style.overflow = 'hidden';
+        }
+    };
+
+    const closeModal = () => {
+        if (modal) {
+            modal.classList.add('hidden');
+            document.body.style.overflow = '';
+        }
+    };
+
+    if (btn) {
+        btn.addEventListener('click', (e) => {
+            e.preventDefault();
+            openModal();
         });
-        location.reload();
     }
-});
+
+    closeBtns.forEach(c => {
+        c.addEventListener('click', (e) => {
+            e.preventDefault();
+            closeModal();
+        });
+    });
+
+    if (form) {
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const submitBtn = form.querySelector('button[type="submit"]');
+            const originalText = submitBtn.innerHTML;
+            
+            try {
+                submitBtn.disabled = true;
+                submitBtn.innerHTML = '<span>Registering...</span>';
+                
+                const payload = {
+                    name: document.getElementById('advName').value,
+                    email: document.getElementById('advEmail').value,
+                    phone: document.getElementById('advPhone').value,
+                    agency: document.getElementById('advAgency').value,
+                    experience: document.getElementById('advExp').value,
+                    specialization: document.getElementById('advSpec').value
+                };
+
+                const res = await fetch('/advisor/lead', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+
+                if (!res.ok) throw new Error("Submission failed");
+                
+                if (typeof UIState !== 'undefined') {
+                    UIState.showSuccess("Welcome aboard! Access window reserved.");
+                }
+                
+                closeModal();
+                form.reset();
+            } catch (err) {
+                if (typeof UIState !== 'undefined') {
+                    UIState.showError("Submission failed. Please check your connection.");
+                }
+            } finally {
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = originalText;
+            }
+        });
+    }
+}
+
+// Initialize recruitment funnel
+initAdvisorLeads();
 

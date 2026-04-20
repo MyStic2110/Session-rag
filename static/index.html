@@ -32,7 +32,7 @@
                     <span class="pulse-dot"></span>
                     <span class="badge-text">Encrypted Session</span>
                 </div>
-                <button id="advisorBtn" class="btn outline small hidden-mobile">Talk to Advisor</button>
+                <button id="advisorBtn" class="btn outline small">Talk to Advisor</button>
                 <button id="endSessionBtn" class="btn danger small hidden">End Session</button>
             </div>
         </div>
@@ -120,6 +120,39 @@
                     </div>
                 </div>
 
+            </div>
+        </section>
+
+        <!-- Insurance Partners Showcase -->
+        <section class="partner-ticker-section fade-in-up delay-4">
+            <div class="container">
+                <h2 class="section-title">Trusted Insurance Partners</h2>
+                <div class="ticker-wrap">
+                    <div class="ticker-track">
+                        <!-- Group 1 -->
+                        <div class="partner-logo star-health"><span class="p-logo-text">Star Health</span></div>
+                        <div class="partner-logo hdfc-ergo"><span class="p-logo-text">HDFC ERGO</span></div>
+                        <div class="partner-logo icici-lombard"><span class="p-logo-text">ICICI Lombard</span></div>
+                        <div class="partner-logo niva-bupa"><span class="p-logo-text">Niva Bupa</span></div>
+                        <div class="partner-logo care"><span class="p-logo-text">Care</span></div>
+                        <div class="partner-logo aditya-birla"><span class="p-logo-text">Aditya Birla</span></div>
+                        <div class="partner-logo sbi"><span class="p-logo-text">SBI Health</span></div>
+                        <div class="partner-logo bajaj"><span class="p-logo-text">Bajaj Allianz</span></div>
+                        <div class="partner-logo reliance"><span class="p-logo-text">Reliance General</span></div>
+                        <div class="partner-logo new-india"><span class="p-logo-text">New India</span></div>
+                        <!-- Group 2 (Duplicated for seamless loop) -->
+                        <div class="partner-logo star-health"><span class="p-logo-text">Star Health</span></div>
+                        <div class="partner-logo hdfc-ergo"><span class="p-logo-text">HDFC ERGO</span></div>
+                        <div class="partner-logo icici-lombard"><span class="p-logo-text">ICICI Lombard</span></div>
+                        <div class="partner-logo niva-bupa"><span class="p-logo-text">Niva Bupa</span></div>
+                        <div class="partner-logo care"><span class="p-logo-text">Care</span></div>
+                        <div class="partner-logo aditya-birla"><span class="p-logo-text">Aditya Birla</span></div>
+                        <div class="partner-logo sbi"><span class="p-logo-text">SBI Health</span></div>
+                        <div class="partner-logo bajaj"><span class="p-logo-text">Bajaj Allianz</span></div>
+                        <div class="partner-logo reliance"><span class="p-logo-text">Reliance General</span></div>
+                        <div class="partner-logo new-india"><span class="p-logo-text">New India</span></div>
+                    </div>
+                </div>
             </div>
         </section>
 
@@ -295,6 +328,60 @@
 
     <!-- Toast Notifications -->
     <div id="toastContainer"></div>
+    <!-- Advisor Lead Modal -->
+    <div id="advisorModal" class="modal-overlay hidden">
+        <div class="modal-backdrop"></div>
+        <div class="modal-container glass-panel">
+            <button class="modal-close">
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+            </button>
+            <div class="modal-header">
+                <div class="header-icon">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="8.5" cy="7" r="4"></circle><polyline points="17 11 19 13 23 9"></polyline></svg>
+                </div>
+                <h2 class="gradient-text violet">Partner with LumeHealth</h2>
+                <div class="promo-badge">Limited Time: Free for 30 Days</div>
+                <p>Join our pool of elite insurance advisors and get early access to our AI-driven lead intelligence platform.</p>
+            </div>
+            <form id="advisorForm" class="modal-form">
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label for="advName">Full Name</label>
+                        <input type="text" id="advName" placeholder="John Doe" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="advEmail">Professional Email</label>
+                        <input type="email" id="advEmail" placeholder="john@agency.com" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="advPhone">Phone Number</label>
+                        <input type="tel" id="advPhone" placeholder="+91 98765 43210" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="advAgency">Agency / Company</label>
+                        <input type="text" id="advAgency" placeholder="Lume Insurance Partners" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="advExp">Years of Experience</label>
+                        <select id="advExp" required>
+                            <option value="" disabled selected>Select range</option>
+                            <option value="0-2">0-2 Years</option>
+                            <option value="3-5">3-5 Years</option>
+                            <option value="5-10">5-10 Years</option>
+                            <option value="10+">10+ Years</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="advSpec">Specialization</label>
+                        <input type="text" id="advSpec" placeholder="Health, Life, Corporate" required>
+                    </div>
+                </div>
+                <button type="submit" class="btn primary full-width">
+                    <span>Reserve My Access</span>
+                </button>
+            </form>
+        </div>
+    </div>
 
     <script src="app.js"></script>
 </body>

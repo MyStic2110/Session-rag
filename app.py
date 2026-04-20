@@ -14,6 +14,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import RedirectResponse, StreamingResponse
 from pydantic import BaseModel
 import httpx
+from motor.motor_asyncio import AsyncIOMotorClient
 
 load_dotenv(override=True)
 
@@ -32,6 +33,26 @@ _raw_url = os.environ.get("LLM_SERVICE_URL", "http://localhost:8001").rstrip("/"
 if _raw_url and not _raw_url.startswith(("http://", "https://")):
     _raw_url = f"http://{_raw_url}"
 LLM_SERVICE_BASE_URL = _raw_url
+
+# --- Enterprise Shield: MongoDB Connection ---
+mongo_uri = os.environ.get("MONGO_URI")
+db_client = None
+db = None
+if mongo_uri:
+    try:
+        db_client = AsyncIOMotorClient(mongo_uri)
+        db = db_client["lumehealth"]
+        print(f"[*] [Backend] Connected to MongoDB: {db.name}")
+    except Exception as e:
+        print(f"[!] [Backend] MongoDB Connection Failed: {str(e)}")
+
+class AdvisorLead(BaseModel):
+    name: str
+    email: str
+    phone: str
+    agency: str
+    experience: str
+    specialization: str
 
 app = FastAPI(title="LumeHealth - Medical AI & Insurance Intelligence")
 
@@ -99,6 +120,22 @@ async def cleanup_sessions_job():
 
 class SessionStartResponse(BaseModel):
     session_id: str
+
+@app.post("/advisor/lead")
+async def save_advisor_lead(lead: AdvisorLead):
+    if not db:
+        raise HTTPException(status_code=503, detail="Database connection unavailable")
+    
+    try:
+        lead_data = lead.dict()
+        lead_data["created_at"] = datetime.utcnow()
+        lead_data["status"] = "new"
+        
+        await db.advisor_leads.insert_one(lead_data)
+        return {"status": "success", "message": "Lead captured successfully"}
+    except Exception as e:
+        print(f"[!] Lead Capture Error: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to save lead information")
 
 class AnalyzeRequest(BaseModel):
     session_id: str
