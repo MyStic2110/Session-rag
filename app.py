@@ -8,12 +8,13 @@ from typing import Dict, List, Any, cast, Optional
 
 import uvicorn
 from dotenv import load_dotenv
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException, BackgroundTasks
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException, BackgroundTasks, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import RedirectResponse, StreamingResponse
-from pydantic import BaseModel
+from fastapi.responses import RedirectResponse, StreamingResponse, JSONResponse
+from pydantic import BaseModel, validator
 import httpx
+import contextlib
 from motor.motor_asyncio import AsyncIOMotorClient
 
 load_dotenv(override=True)
@@ -34,17 +35,39 @@ if _raw_url and not _raw_url.startswith(("http://", "https://")):
     _raw_url = f"http://{_raw_url}"
 LLM_SERVICE_BASE_URL = _raw_url
 
-# --- Enterprise Shield: MongoDB Connection ---
-mongo_uri = os.environ.get("MONGO_URI")
+# --- Enterprise Shield: MongoDB Connectivity & Lifespan ---
 db_client = None
 db = None
-if mongo_uri:
-    try:
-        db_client = AsyncIOMotorClient(mongo_uri)
-        db = db_client["lumehealth"]
-        print(f"[*] [Backend] Connected to MongoDB: {db.name}")
-    except Exception as e:
-        print(f"[!] [Backend] MongoDB Connection Failed: {str(e)}")
+
+@contextlib.asynccontextmanager
+async def lifespan(app: FastAPI):
+    global db, db_client
+    mongo_uri = os.environ.get("MONGO_URI")
+    if mongo_uri:
+        try:
+            masked_uri = mongo_uri.split("@")[-1] if "@" in mongo_uri else "HIDDEN"
+            print(f"[*] [Backend] Attempting MongoDB initialization (Host: {masked_uri})...")
+            db_client = AsyncIOMotorClient(
+                mongo_uri,
+                serverSelectionTimeoutMS=5000,
+                connectTimeoutMS=10000,
+                tlsAllowInvalidCertificates=True
+            )
+            # Connectivity check
+            await db_client.admin.command('ping')
+            db = db_client["lumehealth"]
+            print(f"[OK] [Backend] MongoDB initialized successfully: {db.name}")
+        except Exception as e:
+            print(f"[!] [Backend] MongoDB Startup Connection Failed: {str(e)}")
+            db = None
+            db_client = None
+    else:
+        print("[!] [Backend] MONGO_URI not set. Database features disabled.")
+    
+    yield
+    
+    if db_client:
+        db_client.close()
 
 class AdvisorLead(BaseModel):
     name: str
@@ -54,7 +77,45 @@ class AdvisorLead(BaseModel):
     experience: str
     specialization: str
 
-app = FastAPI(title="LumeHealth - Medical AI & Insurance Intelligence")
+    @validator('email')
+    def validate_email(cls, v):
+        import re
+        v = v.strip()
+        if not re.match(r'^[^@\s]+@[^@\s]+\.[^@\s]+$', v):
+            raise ValueError('Please provide a valid email address.')
+        return v
+
+    @validator('name', 'agency', 'experience', 'specialization')
+    def validate_non_empty(cls, v):
+        if not v or not v.strip():
+            raise ValueError('This field is required and cannot be empty.')
+        return v.strip()
+
+    @validator('phone')
+    def validate_phone(cls, v):
+        import re
+        digits = re.sub(r'\D', '', v)
+        if len(digits) < 7:
+            raise ValueError('Please provide a valid phone number.')
+        return v.strip()
+
+app = FastAPI(title="LumeHealth - Medical AI & Insurance Intelligence", lifespan=lifespan)
+
+# --- Global Exception Handlers: Always return clean JSON ---
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    print(f"[!!!] [Backend] Unhandled Exception on {request.url.path}: {str(exc)}")
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "Something went wrong on our end. Please try again."},
+    )
+
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request: Request, exc: HTTPException):
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"detail": exc.detail},
+    )
 
 app.add_middleware(
     CORSMiddleware,
@@ -192,13 +253,25 @@ async def upload_document(
     file: UploadFile = File(...)
 ):
     print(f"[*] UPLOADING: {doc_type.upper()} file ({file.filename}) for session {session_id[:8]}...")
+
+    # Validate doc_type strictly
+    if doc_type not in ("health", "policy"):
+        raise HTTPException(status_code=400, detail="Invalid document type. Must be 'health' or 'policy'.")
+
     session = get_session(session_id)
     
     raw_content = await file.read()
     content_bytes = cast(bytes, raw_content)
     
     if len(content_bytes) > 5 * 1024 * 1024:
-        raise HTTPException(status_code=400, detail="File too large. Maximum size is 5MB.")
+        raise HTTPException(status_code=413, detail="File too large. Maximum allowed size is 5MB. Please compress your document and try again.")
+
+    # Server-side PDF magic byte check
+    if not content_bytes.startswith(b'%PDF'):
+        raise HTTPException(status_code=415, detail="Invalid file format. Please upload a valid PDF document.")
+
+    if len(content_bytes) < 100:
+        raise HTTPException(status_code=400, detail="The uploaded file appears to be empty or corrupted.")
     
     try:
         print(f"[*] MISTRAL OCR: Forwarding {file.filename} to LLM service...")
@@ -206,8 +279,15 @@ async def upload_document(
             files = {'file': (file.filename, content_bytes, file.content_type)}
             data = {'doc_type': doc_type}
             resp = await client.post(f"{LLM_SERVICE_BASE_URL}/ocr", data=data, files=files)
+            if resp.status_code == 413:
+                raise HTTPException(status_code=413, detail="File too large. Maximum allowed size is 5MB.")
+            if resp.status_code == 415:
+                raise HTTPException(status_code=415, detail="Invalid file format. Please upload a valid PDF.")
+            if resp.status_code == 503:
+                raise HTTPException(status_code=503, detail="Document scanner is temporarily unavailable. Please try again in a moment.")
             if resp.status_code != 200:
-                raise Exception(resp.text)
+                err = resp.json().get('detail', resp.text) if resp.headers.get('content-type','').startswith('application/json') else resp.text
+                raise HTTPException(status_code=resp.status_code, detail=f"Document processing failed: {err}")
             
             res_data = resp.json()
             full_text = res_data["text"]
@@ -223,15 +303,18 @@ async def upload_document(
         
         print(f"[OK] OCR COMPLETE: {len(full_text)} chars extracted.")
             
+    except HTTPException:
+        raise
+    except httpx.TimeoutException:
+        print(f"[!] OCR TIMEOUT: LLM service did not respond in time.")
+        raise HTTPException(status_code=504, detail="Document processing timed out. The file may be too complex. Please try a smaller or simpler PDF.")
     except httpx.ConnectError:
-        error_msg = f"Could not connect to LLM Service at {LLM_SERVICE_BASE_URL}. Verify the service is running and the URL is correct."
+        error_msg = f"Could not connect to Intelligence Engine at {LLM_SERVICE_BASE_URL}. It may be starting up."
         print(f"[!] CONNECTION ERROR: {error_msg}")
-        raise HTTPException(status_code=503, detail=error_msg)
+        raise HTTPException(status_code=503, detail="Intelligence Engine is starting up. Please wait a moment and try again.")
     except Exception as e:
         print(f"[!] OCR ERROR: {str(e)}")
-        # Log more context for debugging
-        print(f"[*] Target URL was: {LLM_SERVICE_BASE_URL}/ocr")
-        raise HTTPException(status_code=500, detail=f"OCR failed: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to process document. Please check the file is not password-protected and try again.")
             
     return {"status": "success", "type": doc_type}
 
@@ -277,34 +360,49 @@ async def analyze_health_insurance(request: AnalyzeRequest):
     if not session["health_text"] or not session["policy_text"]:
         async with QUEUE_LOCK:
             ACTIVE_ANALYSES_COUNT -= 1
-        raise HTTPException(status_code=400, detail="Both Health Report and Insurance Policy must be uploaded first.")
+        raise HTTPException(status_code=400, detail="Please upload both your medical report and insurance policy before running the analysis.")
 
-    try:
-        print("[*] Forwarding to LLM microservice Layer 2 & 3...")
-        async with httpx.AsyncClient(timeout=120.0) as client:
-            payload = {
-                "health_text": session['health_text'],
-                "policy_text": session['policy_text'],
-                "health_filename": session.get('health_filename'),
-                "policy_filename": session.get('policy_filename')
-            }
-            resp = await client.post(f"{LLM_SERVICE_BASE_URL}/analyze", json=payload)
-            if resp.status_code != 200:
-                raise Exception(resp.text)
-            
-            analysis_data = resp.json()
-            
-        print("[OK] ANALYSIS COMPLETE: Intelligent Mapping finished.")
-        return analysis_data
+    last_error = None
+    for attempt in range(2):  # Retry once on transient failure
+        try:
+            print(f"[*] Forwarding to LLM microservice (attempt {attempt+1}/2)...")
+            async with httpx.AsyncClient(timeout=120.0) as client:
+                payload = {
+                    "health_text": session['health_text'],
+                    "policy_text": session['policy_text'],
+                    "health_filename": session.get('health_filename'),
+                    "policy_filename": session.get('policy_filename')
+                }
+                resp = await client.post(f"{LLM_SERVICE_BASE_URL}/analyze", json=payload)
+                if resp.status_code != 200:
+                    err = resp.json().get('detail', resp.text) if resp.headers.get('content-type','').startswith('application/json') else resp.text
+                    raise Exception(err)
+                
+                analysis_data = resp.json()
+                
+            print("[OK] ANALYSIS COMPLETE: Intelligent Mapping finished.")
+            return analysis_data
         
-    except HTTPException:
-        raise
-    except Exception as e:
-        print(f"[!] ANALYSIS ERROR: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
-    finally:
-        async with QUEUE_LOCK:
-            ACTIVE_ANALYSES_COUNT -= 1
+        except HTTPException:
+            raise
+        except httpx.TimeoutException:
+            print(f"[!] ANALYSIS TIMEOUT on attempt {attempt+1}.")
+            last_error = "Analysis timed out. The Intelligence Engine is under high load. Please try again in a moment."
+            await asyncio.sleep(2)
+            continue
+        except httpx.ConnectError:
+            print(f"[!] ANALYSIS CONNECTION ERROR on attempt {attempt+1}.")
+            last_error = "Could not reach the Intelligence Engine. Please try again."
+            break
+        except Exception as e:
+            print(f"[!] ANALYSIS ERROR: {str(e)}")
+            last_error = str(e)
+            break
+        finally:
+            if attempt == 1 or last_error is None:
+                pass  # Decremented in outer finally
+
+    raise HTTPException(status_code=503, detail=last_error or "Analysis failed. Please try again.")
 
 @app.get("/analyze/stream/{session_id}")
 async def analyze_health_insurance_stream(session_id: str):
@@ -314,7 +412,7 @@ async def analyze_health_insurance_stream(session_id: str):
     session = get_session(session_id)
     
     if not session.get("health_text") or not session.get("policy_text"):
-        raise HTTPException(status_code=400, detail="Both Health Report and Insurance Policy must be uploaded first.")
+        raise HTTPException(status_code=400, detail="Please upload both your medical report and insurance policy before running the analysis.")
     
     async def event_generator():
         global ACTIVE_ANALYSES_COUNT
@@ -347,13 +445,25 @@ async def analyze_health_insurance_stream(session_id: str):
                 "health_filename": session.get('health_filename'),
                 "policy_filename": session.get('policy_filename')
             }
-            async with httpx.AsyncClient(timeout=120.0) as client:
+            async with httpx.AsyncClient(timeout=180.0) as client:
                 async with client.stream("POST", f"{LLM_SERVICE_BASE_URL}/analyze/stream", json=payload) as response:
+                    if response.status_code == 422:
+                        yield f"event: error\ndata: {json.dumps({'detail': 'The uploaded documents could not be processed. Please ensure they contain readable text.'})}\n\n"
+                        return
+                    if response.status_code >= 400:
+                        yield f"event: error\ndata: {json.dumps({'detail': 'Intelligence Engine returned an error. Please try again.'})}\n\n"
+                        return
                     async for chunk in response.aiter_text():
                         yield chunk
+        except httpx.TimeoutException:
+            print(f"[!] ANALYSIS STREAM TIMEOUT.")
+            yield f"event: error\ndata: {json.dumps({'detail': 'Analysis timed out. The Intelligence Engine is under high load. Please try again in a moment.'})}\n\n"
+        except httpx.ConnectError:
+            print(f"[!] ANALYSIS STREAM CONNECT ERROR.")
+            yield f"event: error\ndata: {json.dumps({'detail': 'Could not reach the Intelligence Engine. It may be starting up. Please try again.'})}\n\n"
         except Exception as e:
             print(f"[!] ANALYSIS STREAM ERROR: {str(e)}")
-            yield f"event: error\ndata: {json.dumps({'detail': str(e)})}\n\n"
+            yield f"event: error\ndata: {json.dumps({'detail': 'An unexpected error occurred during analysis. Please try again.'})}\n\n"
         finally:
             async with QUEUE_LOCK:
                 ACTIVE_ANALYSES_COUNT -= 1

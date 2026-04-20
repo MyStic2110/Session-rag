@@ -86,15 +86,65 @@ const UIState = {
     }
 };
 
-// Initialize Session
+// --- Error Translation Layer: Maps technical errors to user-friendly messages ---
+function translateError(rawMsg) {
+    if (!rawMsg) return 'An unexpected error occurred. Please try again.';
+    const msg = rawMsg.toLowerCase();
+    if (msg.includes('session expired') || msg.includes('session not found') || msg.includes('backend restarted'))
+        return 'Your session has expired. Please refresh the page to start a new session.';
+    if (msg.includes('both') && msg.includes('upload') || msg.includes('medical report and insurance'))
+        return 'Please upload both your medical report and insurance policy before running the analysis.';
+    if (msg.includes('file too large') || msg.includes('maximum') && msg.includes('5mb'))
+        return 'This file is too large. Maximum allowed size is 5MB. Please compress your document and try again.';
+    if (msg.includes('invalid file format') || msg.includes('valid pdf'))
+        return 'Invalid document format. Please upload a valid PDF document.';
+    if (msg.includes('password-protected') || msg.includes('corrupted'))
+        return 'Could not read the PDF. Please ensure it is not password-protected or corrupted.';
+    if (msg.includes('timed out') || msg.includes('timeout') || msg.includes('high load'))
+        return 'The request timed out. The system is under high load. Please try again in a moment.';
+    if (msg.includes('intelligence engine') || msg.includes('starting up') || msg.includes('connect'))
+        return 'The Intelligence Engine is unavailable. Please wait a moment and try again.';
+    if (msg.includes('scanner') || msg.includes('ocr'))
+        return 'Document scanner is temporarily unavailable. Please try again in a moment.';
+    if (msg.includes('text is too short') || msg.includes('too short to be a valid'))
+        return 'The document could not be read properly. Please ensure your PDF contains readable text.';
+    if (msg.includes('could not read') || msg.includes('readable text'))
+        return 'The uploaded documents could not be processed. Please ensure they contain readable text.';
+    if (msg.includes('something went wrong') || msg.includes('internal error'))
+        return 'Something went wrong on our end. Please try again.';
+    // Return a cleaned version of the raw message as final fallback
+    return rawMsg.length > 120 ? rawMsg.substring(0, 120) + '...' : rawMsg;
+}
+
+// Initialize Session (with retry)
 (async function init() {
-    try {
-        const res = await fetch('/session/start', { method: 'POST' });
-        if (!res.ok) throw new Error("Could not initialize secure session");
-        const data = await res.json();
-        sessionId = data.session_id;
-    } catch (e) {
-        UIState.showError("Security Handshake Failed. Please refresh.");
+    const MAX_RETRIES = 3;
+    let attempt = 0;
+    let success = false;
+
+    while (attempt < MAX_RETRIES && !success) {
+        try {
+            const res = await fetch('/session/start', { method: 'POST' });
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            const data = await res.json();
+            sessionId = data.session_id;
+            success = true;
+        } catch (e) {
+            attempt++;
+            if (attempt < MAX_RETRIES) {
+                await new Promise(r => setTimeout(r, 1000 * attempt));
+            }
+        }
+    }
+
+    if (!success) {
+        // Show persistent banner — toast alone is not enough for this critical failure  
+        const banner = document.createElement('div');
+        banner.id = 'sessionFailBanner';
+        banner.style.cssText = 'position:fixed;top:0;left:0;width:100%;background:#c0392b;color:#fff;text-align:center;padding:14px 20px;z-index:9999;font-weight:600;font-size:0.95rem;';
+        banner.textContent = '⚠ Service Unavailable — Could not establish a secure session. Please refresh the page or try again later.';
+        document.body.prepend(banner);
+        UIState.showError('Security Handshake Failed. Please refresh the page.');
     }
 })();
 
@@ -164,7 +214,14 @@ function handleFileSelect(file, labelEl, type, zone) {
 }
 
 DOM.analyzeBtn.addEventListener('click', async () => {
-    if (!healthFile || !policyFile || !sessionId) return;
+    if (!healthFile || !policyFile) {
+        UIState.showError('Please select both your medical report and insurance policy before continuing.');
+        return;
+    }
+    if (!sessionId) {
+        UIState.showError('Session is not active. Please refresh the page.');
+        return;
+    }
     
     try {
         UIState.setLoading("Document Secure Upload", "Encrypting and transmitting medical records...");
@@ -178,7 +235,7 @@ DOM.analyzeBtn.addEventListener('click', async () => {
         
     } catch (e) {
         UIState.hideLoading();
-        UIState.showError(e.message);
+        UIState.showError(translateError(e.message));
     }
 });
 
@@ -256,19 +313,38 @@ function triggerAnalysis() {
     es.addEventListener('result', (e) => {
         const data = JSON.parse(e.data);
         es.close();
+        clearTimeout(watchdogTimer);
         renderResults(data);
     });
 
+    // Watchdog: close stream and show error if no result arrives in 180 seconds
+    const watchdogTimer = setTimeout(() => {
+        es.close();
+        UIState.hideLoading();
+        UIState.showError('Analysis is taking longer than expected. Please try again. If the issue persists, try uploading simpler documents.');
+    }, 180000);
+
     es.addEventListener('error', (e) => {
         es.close();
+        clearTimeout(watchdogTimer);
         UIState.hideLoading();
         try {
             const data = JSON.parse(e.data);
-            UIState.showError(data.detail || "Stream connection lost.");
+            UIState.showError(translateError(data.detail || 'Stream connection lost.'));
         } catch {
-            UIState.showError("Stream connection lost or timed out.");
+            // Native EventSource error (network disconnect)
+            UIState.showError('Connection to Intelligence Engine lost. Please check your internet and try again.');
         }
     });
+
+    // Native onerror (network-level disconnect, not server-sent error event)
+    es.onerror = (e) => {
+        if (es.readyState === EventSource.CLOSED) {
+            clearTimeout(watchdogTimer);
+            UIState.hideLoading();
+            UIState.showError('Connection lost. Please check your internet connection and try again.');
+        }
+    };
 }
 
 function renderSkeletons(msg = "Analyzing...") {
@@ -317,12 +393,28 @@ async function upload(file, type) {
     fd.append('doc_type', type);
     fd.append('file', file);
     
-    const res = await fetch('/upload', { method: 'POST', body: fd });
-    if (res.status === 404) {
-        UIState.showError("Session expired or backend restarted. Please refresh the page.");
-        throw new Error("Session expired");
+    let res;
+    try {
+        res = await fetch('/upload', { method: 'POST', body: fd });
+    } catch (networkErr) {
+        throw new Error('Network error: Could not reach the server. Please check your connection.');
     }
-    if (!res.ok) throw new Error(`Document verification failed for ${type} report`);
+
+    if (!res.ok) {
+        let detail = `Upload failed for ${type} document.`;
+        try {
+            const err = await res.json();
+            detail = err.detail || detail;
+        } catch {}
+
+        // Map HTTP status codes to user-friendly messages
+        if (res.status === 404) throw new Error('Your session has expired. Please refresh the page.');
+        if (res.status === 413) throw new Error('File too large. Maximum allowed size is 5MB. Please compress your document.');
+        if (res.status === 415) throw new Error('Invalid file format. Please upload a valid PDF document.');
+        if (res.status === 503) throw new Error('Intelligence Engine is starting up. Please wait a moment and try again.');
+        if (res.status === 504) throw new Error('Document processing timed out. Please try a smaller or simpler PDF.');
+        throw new Error(translateError(detail));
+    }
     
     UIState.showSuccess(`${type.charAt(0).toUpperCase() + type.slice(1)} document processed successfully.`);
 }
@@ -592,8 +684,72 @@ function initAdvisorLeads() {
     });
 
     if (form) {
+        // Per-field inline error helper
+        function setFieldError(fieldId, msg) {
+            const field = document.getElementById(fieldId);
+            if (!field) return;
+            field.style.borderColor = msg ? '#e74c3c' : '';
+            let errEl = field.parentElement.querySelector('.field-error');
+            if (msg) {
+                if (!errEl) {
+                    errEl = document.createElement('small');
+                    errEl.className = 'field-error';
+                    errEl.style.cssText = 'color:#e74c3c;font-size:0.78rem;display:block;margin-top:3px;';
+                    field.parentElement.appendChild(errEl);
+                }
+                errEl.textContent = msg;
+            } else if (errEl) {
+                errEl.remove();
+                field.style.borderColor = '';
+            }
+        }
+
+        function validateAdvisorForm() {
+            let valid = true;
+            const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+            const phoneRegex = /^[\d\s\-\+\(\)]{7,20}$/;
+
+            const name = document.getElementById('advName')?.value.trim();
+            const email = document.getElementById('advEmail')?.value.trim();
+            const phone = document.getElementById('advPhone')?.value.trim();
+            const agency = document.getElementById('advAgency')?.value.trim();
+            const exp = document.getElementById('advExp')?.value.trim();
+            const spec = document.getElementById('advSpec')?.value;
+
+            if (!name) { setFieldError('advName', 'Full name is required.'); valid = false; }
+            else setFieldError('advName', null);
+
+            if (!email || !emailRegex.test(email)) { setFieldError('advEmail', 'Please enter a valid email address.'); valid = false; }
+            else setFieldError('advEmail', null);
+
+            if (!phone || !phoneRegex.test(phone)) { setFieldError('advPhone', 'Please enter a valid phone number.'); valid = false; }
+            else setFieldError('advPhone', null);
+
+            if (!agency) { setFieldError('advAgency', 'Agency name is required.'); valid = false; }
+            else setFieldError('advAgency', null);
+
+            if (!exp) { setFieldError('advExp', 'Please select your years of experience.'); valid = false; }
+            else setFieldError('advExp', null);
+
+            if (!spec) { setFieldError('advSpec', 'Please select your specialization.'); valid = false; }
+            else setFieldError('advSpec', null);
+
+            return valid;
+        }
+
+        // Live validation feedback on blur
+        ['advName','advEmail','advPhone','advAgency','advExp','advSpec'].forEach(id => {
+            document.getElementById(id)?.addEventListener('blur', () => validateAdvisorForm());
+        });
+
         form.addEventListener('submit', async (e) => {
             e.preventDefault();
+
+            if (!validateAdvisorForm()) {
+                UIState.showWarning('Please fix the highlighted fields before submitting.');
+                return;
+            }
+
             const submitBtn = form.querySelector('button[type="submit"]');
             const originalText = submitBtn.innerHTML;
             
@@ -602,11 +758,11 @@ function initAdvisorLeads() {
                 submitBtn.innerHTML = '<span>Registering...</span>';
                 
                 const payload = {
-                    name: document.getElementById('advName').value,
-                    email: document.getElementById('advEmail').value,
-                    phone: document.getElementById('advPhone').value,
-                    agency: document.getElementById('advAgency').value,
-                    experience: document.getElementById('advExp').value,
+                    name: document.getElementById('advName').value.trim(),
+                    email: document.getElementById('advEmail').value.trim(),
+                    phone: document.getElementById('advPhone').value.trim(),
+                    agency: document.getElementById('advAgency').value.trim(),
+                    experience: document.getElementById('advExp').value.trim(),
                     specialization: document.getElementById('advSpec').value
                 };
 
@@ -616,18 +772,18 @@ function initAdvisorLeads() {
                     body: JSON.stringify(payload)
                 });
 
-                if (!res.ok) throw new Error("Submission failed");
-                
-                if (typeof UIState !== 'undefined') {
-                    UIState.showSuccess("Welcome aboard! Access window reserved.");
+                if (!res.ok) {
+                    const errData = await res.json().catch(() => ({}));
+                    throw new Error(errData.detail || 'Submission failed. Please check your details and try again.');
                 }
                 
+                UIState.showSuccess('Welcome aboard! Your access window has been reserved.');
                 closeModal();
                 form.reset();
+                // Clear inline errors
+                ['advName','advEmail','advPhone','advAgency','advExp','advSpec'].forEach(id => setFieldError(id, null));
             } catch (err) {
-                if (typeof UIState !== 'undefined') {
-                    UIState.showError("Submission failed. Please check your connection.");
-                }
+                UIState.showError(translateError(err.message || 'Submission failed. Please check your connection.'));
             } finally {
                 submitBtn.disabled = false;
                 submitBtn.innerHTML = originalText;
@@ -638,4 +794,3 @@ function initAdvisorLeads() {
 
 // Initialize recruitment funnel
 initAdvisorLeads();
-
